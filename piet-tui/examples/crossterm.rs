@@ -14,7 +14,7 @@ mod native {
     use std::io;
     use std::time::Duration;
 
-    use piet::kurbo::{Line, Point, Rect};
+    use piet::kurbo::{BezPath, Circle, Line, Point, Rect};
     use piet::{
         Color, FontStyle, FontWeight, ImageFormat, InterpolationMode, RenderContext, StrokeStyle,
         Text as _, TextAttribute, TextLayoutBuilder,
@@ -96,6 +96,10 @@ mod native {
                 &separator_style,
             );
 
+            if area.width >= 60 && area.height >= 23 {
+                draw_kurbo_shapes(context);
+            }
+
             let help = context
                 .text()
                 .new_text_layout("q or Esc: quit")
@@ -104,6 +108,44 @@ mod native {
                 .unwrap();
             context.draw_text(&help, Point::new(1.0, area.height.saturating_sub(2) as f64));
         });
+    }
+
+    fn draw_kurbo_shapes(context: &mut TuiRenderContext<'_>) {
+        let caption = context
+            .text()
+            .new_text_layout("kurbo shapes, stroke width = 1 cell")
+            .range_attribute(0.., FontStyle::Italic)
+            .build()
+            .unwrap();
+        context.draw_text(&caption, Point::new(2.0, 11.0));
+
+        context.stroke(
+            Line::new((2.5, 14.5), (22.5, 14.5)),
+            &Color::rgb8(100, 180, 255),
+            1.0,
+        );
+        context.stroke(
+            Line::new((30.5, 16.5), (50.5, 13.5)),
+            &Color::rgb8(255, 200, 80),
+            1.0,
+        );
+        context.stroke(
+            Circle::new((68.5, 15.0), 2.5),
+            &Color::rgb8(240, 120, 160),
+            1.0,
+        );
+        context.stroke(
+            Rect::new(2.5, 18.5, 21.5, 20.5),
+            &Color::rgb8(120, 220, 150),
+            1.0,
+        );
+
+        let mut triangle = BezPath::new();
+        triangle.move_to((32.5, 20.5));
+        triangle.line_to((41.5, 17.5));
+        triangle.line_to((50.5, 20.5));
+        triangle.close_path();
+        context.stroke(&triangle, &Color::rgb8(180, 150, 255), 1.0);
     }
 
     fn gradient_image(context: &mut TuiRenderContext<'_>, width: usize, height: usize) -> TuiImage {
