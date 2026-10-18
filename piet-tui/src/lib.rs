@@ -28,6 +28,7 @@
 //! of the transform are ignored for text. Canvas fills, strokes, clips, and
 //! images support the full affine transform.
 
+mod cell;
 mod color;
 mod config;
 mod render;
@@ -38,6 +39,7 @@ mod big_text;
 
 #[cfg(feature = "big-text")]
 pub use big_text::BigTextSize;
+pub use cell::TuiCellExt;
 pub use config::TuiConfig;
 pub use render::{TuiBrush, TuiImage, TuiRenderContext, render_with};
 pub use text::{TuiText, TuiTextLayout, TuiTextLayoutBuilder};

@@ -252,7 +252,7 @@ impl<'a> TuiRenderContext<'a> {
         self.buffer.cell_mut((x, y))
     }
 
-    fn cell_mut(&mut self, col: usize, row: usize) -> Option<&mut Cell> {
+    pub(crate) fn cell_mut(&mut self, col: usize, row: usize) -> Option<&mut Cell> {
         if self.clipped(col, row) {
             return None;
         }

@@ -47,6 +47,26 @@ origin. Terminal cells cannot scale, rotate, or shear glyphs, so those parts of
 the transform are ignored for text. Canvas fills, strokes, clips, and images
 support the full affine transform.
 
+For terminal-specific UI primitives, `TuiCellExt` provides low-level cell
+drawing without adding widget semantics to Piet:
+
+```rust
+use piet::{Color, RenderContext};
+use piet_tui::TuiCellExt;
+
+context.set_cell(0, 0, "┌", Color::WHITE, Color::BLACK);
+context.fill_cells(
+    ratatui_core::layout::Rect::new(1, 0, 3, 1),
+    Color::WHITE,
+    Color::BLACK,
+);
+```
+
+Cell coordinates are relative to the render context area. These operations
+ignore the current transform, but respect the context area and active clip.
+Borders and other widget-level behavior should be implemented by the
+application or UI framework on top of these primitives.
+
 ## Why not a feature on `piet`?
 
 `piet` itself is backend-neutral and does not depend on Cairo, CoreGraphics,
