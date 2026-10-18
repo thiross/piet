@@ -1,7 +1,7 @@
 // Copyright 2026 the Piet Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use piet::kurbo::{Affine, Line, Point, Rect, Shape};
+use piet::kurbo::{Affine, Circle, Line, Point, Rect, Shape};
 use piet::{
     Color, Error, FixedGradient, FixedRadialGradient, FontStyle, FontWeight, GradientStop,
     ImageFormat, InterpolationMode, LineCap, LinearGradient, RenderContext, StrokeStyle, Text as _,
@@ -159,6 +159,18 @@ fn fill_paints_cell_background() {
 }
 
 #[test]
+fn curved_fill_uses_flattened_paths() {
+    let mut buffer = empty_buffer(6, 6);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.fill(Circle::new((3.0, 3.0), 2.2), &Color::rgb8(1, 2, 3));
+    }
+
+    assert_eq!(buffer.cell((2, 2)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
 fn even_odd_fill_leaves_hole() {
     let mut buffer = empty_buffer(6, 6);
     {
@@ -170,6 +182,47 @@ fn even_odd_fill_leaves_hole() {
 
     assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
     assert_eq!(buffer.cell((2, 2)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn even_odd_curved_fill_leaves_hole() {
+    let mut buffer = empty_buffer(6, 6);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let mut path = Circle::new((3.0, 3.0), 3.0).to_path(0.1);
+        path.extend(Circle::new((3.0, 3.0), 1.5).to_path(0.1));
+        context.fill_even_odd(&path, &Color::rgb8(1, 2, 3));
+    }
+
+    assert_eq!(buffer.cell((0, 3)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 2)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn curved_clip_restricts_fill() {
+    let mut buffer = empty_buffer(6, 6);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.clip(Circle::new((3.0, 3.0), 2.2));
+        context.fill(Rect::new(0.0, 0.0, 6.0, 6.0), &Color::rgb8(1, 2, 3));
+    }
+
+    assert_eq!(buffer.cell((2, 2)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn fill_skips_cells_outside_existing_clip() {
+    let mut buffer = empty_buffer(4, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.clip(Rect::new(0.0, 0.0, 2.0, 1.0));
+        context.fill(Rect::new(0.0, 0.0, 4.0, 2.0), &Color::rgb8(1, 2, 3));
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Reset);
+    assert_eq!(buffer.cell((0, 1)).unwrap().bg, TuiColor::Reset);
 }
 
 #[test]

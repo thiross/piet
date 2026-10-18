@@ -131,7 +131,7 @@ impl TuiImage {
 #[derive(Clone)]
 struct State {
     transform: Affine,
-    clip: Option<ClipMask>,
+    clip: Option<Arc<ClipMask>>,
 }
 
 impl State {
@@ -151,11 +151,11 @@ struct ClipMask {
 }
 
 impl ClipMask {
-    fn new(width: usize, height: usize) -> Self {
+    fn empty(width: usize, height: usize) -> Self {
         Self {
             width,
             height,
-            mask: vec![true; width * height],
+            mask: vec![false; width * height],
         }
     }
 
@@ -310,15 +310,19 @@ impl<'a> TuiRenderContext<'a> {
     }
 
     fn fill_path(&mut self, path: &BezPath, brush: &TuiBrush, even_odd: bool) {
+        let flattened = FlattenedPath::new(path);
         let (col0, row0, col1, row1) = self.cell_range(path.bounding_box());
 
         for row in row0..row1 {
             for col in col0..col1 {
+                if self.clipped(col, row) {
+                    continue;
+                }
                 let point = self.cell_center(col, row);
                 let inside = if even_odd {
-                    even_odd_contains(path, point)
+                    flattened.even_odd_contains(point)
                 } else {
-                    path.winding(point) != 0
+                    flattened.winding(point) != 0
                 };
                 if inside {
                     let color = brush.color_at(point);
@@ -396,6 +400,9 @@ impl<'a> TuiRenderContext<'a> {
 
         for row in row0..row1 {
             for col in col0..col1 {
+                if self.clipped(col, row) {
+                    continue;
+                }
                 let top_point = Point::new(
                     (col as f64 + 0.5) * cell_width,
                     (row as f64 + 0.25) * cell_height,
@@ -560,24 +567,31 @@ impl RenderContext for TuiRenderContext<'_> {
     fn clip(&mut self, shape: impl Shape) {
         let mut path = shape.into_path(0.1);
         path.apply_affine(self.state.transform);
+        let flattened = FlattenedPath::new(&path);
 
         let width = self.area.width as usize;
         let height = self.area.height as usize;
-        let mut next = ClipMask::new(width, height);
-        for row in 0..height {
-            for col in 0..width {
-                if path.winding(self.cell_center(col, row)) == 0 {
-                    next.mask[row * width + col] = false;
+        let mut next = ClipMask::empty(width, height);
+        let (col0, row0, col1, row1) = self.cell_range(path.bounding_box());
+        for row in row0..row1 {
+            for col in col0..col1 {
+                if self.clipped(col, row) {
+                    continue;
+                }
+                if flattened.winding(self.cell_center(col, row)) != 0 {
+                    next.mask[row * width + col] = true;
                 }
             }
         }
 
         match self.state.clip.take() {
-            Some(mut current) => {
+            Some(current) => {
+                let mut current =
+                    Arc::try_unwrap(current).unwrap_or_else(|current| ClipMask::clone(&current));
                 current.intersect(&next);
-                self.state.clip = Some(current);
+                self.state.clip = Some(Arc::new(current));
             }
-            None => self.state.clip = Some(next),
+            None => self.state.clip = Some(Arc::new(next)),
         }
     }
 
@@ -930,41 +944,68 @@ fn bilinear_samples(samples: [([u8; 4], f64); 4]) -> [u8; 4] {
     ]
 }
 
-fn even_odd_contains(path: &BezPath, point: Point) -> bool {
-    let mut inside = false;
-    let mut current = None;
-    let mut subpath_start = None;
+struct FlattenedPath {
+    segments: Vec<(Point, Point)>,
+}
 
-    flatten(path.path_elements(0.1), 0.1, |element| match element {
-        PathEl::MoveTo(p) => {
-            if let (Some(from), Some(to)) = (current, subpath_start)
-                && ray_crosses(from, to, point)
-            {
-                inside = !inside;
-            }
-            current = Some(p);
-            subpath_start = Some(p);
-        }
-        PathEl::LineTo(p) => {
-            if let Some(from) = current
-                && ray_crosses(from, p, point)
-            {
-                inside = !inside;
-            }
-            current = Some(p);
-        }
-        PathEl::ClosePath => {
-            if let (Some(from), Some(to)) = (current, subpath_start)
-                && ray_crosses(from, to, point)
-            {
-                inside = !inside;
-            }
-            current = subpath_start;
-        }
-        PathEl::QuadTo(_, _) | PathEl::CurveTo(_, _, _) => {}
-    });
+impl FlattenedPath {
+    fn new(path: &BezPath) -> Self {
+        let mut segments = Vec::with_capacity(path.elements().len());
+        let mut current = None;
+        let mut subpath_start = None;
 
-    inside
+        flatten(path.path_elements(0.1), 0.1, |element| match element {
+            PathEl::MoveTo(p) => {
+                current = Some(p);
+                subpath_start = Some(p);
+            }
+            PathEl::LineTo(p) => {
+                if let Some(from) = current {
+                    segments.push((from, p));
+                }
+                current = Some(p);
+            }
+            PathEl::ClosePath => {
+                if let (Some(from), Some(to)) = (current, subpath_start)
+                    && from != to
+                {
+                    segments.push((from, to));
+                }
+                current = subpath_start;
+            }
+            PathEl::QuadTo(_, _) | PathEl::CurveTo(_, _, _) => {}
+        });
+
+        Self { segments }
+    }
+
+    fn winding(&self, point: Point) -> i32 {
+        self.segments
+            .iter()
+            .map(|&(from, to)| ray_winding(from, to, point))
+            .sum()
+    }
+
+    fn even_odd_contains(&self, point: Point) -> bool {
+        let mut inside = false;
+        for &(from, to) in &self.segments {
+            if ray_crosses(from, to, point) {
+                inside = !inside;
+            }
+        }
+        inside
+    }
+}
+
+fn ray_winding(a: Point, b: Point, point: Point) -> i32 {
+    if (a.y > point.y) == (b.y > point.y) {
+        return 0;
+    }
+    let x = a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y);
+    if point.x >= x {
+        return 0;
+    }
+    if b.y > a.y { -1 } else { 1 }
 }
 
 fn ray_crosses(a: Point, b: Point, point: Point) -> bool {
