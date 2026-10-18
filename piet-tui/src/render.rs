@@ -21,6 +21,8 @@ use ratatui_core::style::Modifier;
 
 use crate::color::blend_over;
 use crate::config::TuiConfig;
+#[cfg(feature = "big-text")]
+use crate::text::LayoutData;
 use crate::text::{TextStyle, TuiText, TuiTextLayout};
 
 /// A brush for the terminal backend.
@@ -451,6 +453,51 @@ impl<'a> TuiRenderContext<'a> {
         cell.set_symbol(symbol);
         true
     }
+
+    #[cfg(feature = "big-text")]
+    fn draw_big_text(&mut self, data: &LayoutData, origin_col: isize, origin_row: isize) {
+        let Some(big_text) = &data.big_text else {
+            return;
+        };
+        let cell_width = self.config.cell_width();
+        let glyph_cols = big_text.glyph_cols();
+        let glyph_rows = big_text.glyph_rows();
+
+        for (line_index, line) in data.lines.iter().enumerate() {
+            let line_row = origin_row + (line_index * glyph_rows) as isize;
+            let line_col = origin_col + (line.x_offset / cell_width).round() as isize;
+
+            for grapheme in &data.graphemes[line.grapheme_start..line.grapheme_end] {
+                if grapheme.cols == 0 {
+                    continue;
+                }
+                let col = line_col + grapheme.col as isize;
+                for row_offset in 0..glyph_rows {
+                    let row = line_row + row_offset as isize;
+                    if row < 0 {
+                        continue;
+                    }
+                    for col_offset in 0..glyph_cols {
+                        let x = col + col_offset as isize;
+                        if x < 0 {
+                            continue;
+                        }
+                        let symbol = big_text.symbol(
+                            grapheme.col + col_offset,
+                            line_index * glyph_rows + row_offset,
+                        );
+                        let mut encoded = [0; 4];
+                        self.write_text_cell(
+                            x as usize,
+                            row as usize,
+                            symbol.encode_utf8(&mut encoded),
+                            &grapheme.style,
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl RenderContext for TuiRenderContext<'_> {
@@ -546,6 +593,11 @@ impl RenderContext for TuiRenderContext<'_> {
         let origin_row = (origin.y / cell_height).round() as isize;
 
         let data = layout.data();
+        #[cfg(feature = "big-text")]
+        if data.big_text.is_some() {
+            self.draw_big_text(data, origin_col, origin_row);
+            return;
+        }
         let text = data.text.as_str();
 
         for (line_index, line) in data.lines.iter().enumerate() {

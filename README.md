@@ -83,7 +83,8 @@ which should produce an image called `d2d-test-00-2.00.png`.
 Terminal backend that renders into a ratatui `Buffer`. It depends only on
 `piet` and `ratatui-core`, so using it directly does not pull in Cairo,
 CoreGraphics, Direct2D, or web dependencies. Terminal I/O can be provided by
-`ratatui-crossterm` or any other ratatui backend.
+`ratatui-crossterm` or any other ratatui backend. An optional `big-text` feature
+adds fixed-resolution display fonts for short titles.
 
 ## Minimum supported Rust Version (MSRV)
 

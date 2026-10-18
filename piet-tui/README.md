@@ -20,6 +20,28 @@ supports source cropping with scaling. Each terminal cell has only a foreground
 and background color, so the backend renders two vertical image samples per cell
 with an upper-half block (`▀`). `capture_image_area` is not supported.
 
+The optional `big-text` feature adds fixed-resolution display fonts backed by
+[`tui-big-text`](https://crates.io/crates/tui-big-text). Big text is selected
+explicitly per layout; `FontFamily` and `FontSize` do not select or scale it.
+
+```rust
+use piet::{RenderContext, Text as _, TextLayoutBuilder};
+use piet_tui::BigTextSize;
+
+let title = context
+    .text()
+    .new_text_layout("PIET TUI")
+    .big_text(BigTextSize::Quadrant)
+    .build()
+    .unwrap();
+```
+
+`BigTextSize::Full`, `HalfHeight`, `HalfWidth`, and `Quadrant` provide portable
+8x8, 8x4, 4x8, and 4x4 cell footprints. Big text uses `font8x8`, so Latin,
+Greek, Hiragana, and a few other scripts are available, but CJK Han characters
+are not. Unsupported non-whitespace glyphs make layout construction fail with
+`Error::NotSupported`.
+
 ## Why not a feature on `piet`?
 
 `piet` itself is backend-neutral and does not depend on Cairo, CoreGraphics,
@@ -62,6 +84,12 @@ Run the interactive `ratatui` + `crossterm` example with:
 
 ```sh
 cargo run -p piet-tui --example crossterm
+```
+
+Run the buffer-level big-text example with:
+
+```sh
+cargo run -p piet-tui --features big-text --example big_text
 ```
 
 `crossterm` is a dev-dependency of the example only. The library itself renders

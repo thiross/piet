@@ -16,7 +16,39 @@ use piet::{
 use ratatui_core::buffer::CellWidth;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[cfg(feature = "big-text")]
+use crate::big_text::{BigTextRaster, BigTextSize, rasterize};
 use crate::config::TuiConfig;
+
+#[derive(Clone, Copy, Debug, Default)]
+enum LayoutMode {
+    #[default]
+    Cell,
+    #[cfg(feature = "big-text")]
+    BigText(BigTextSize),
+}
+
+impl LayoutMode {
+    const fn is_big_text(self) -> bool {
+        !matches!(self, Self::Cell)
+    }
+
+    const fn glyph_cols(self) -> usize {
+        match self {
+            Self::Cell => 1,
+            #[cfg(feature = "big-text")]
+            Self::BigText(size) => size.glyph_cols(),
+        }
+    }
+
+    const fn glyph_rows(self) -> usize {
+        match self {
+            Self::Cell => 1,
+            #[cfg(feature = "big-text")]
+            Self::BigText(size) => size.glyph_rows(),
+        }
+    }
+}
 
 /// A text factory for the terminal backend.
 #[derive(Clone, Debug)]
@@ -56,6 +88,7 @@ impl piet::Text for TuiText {
             backgrounds: Vec::new(),
             max_width: f64::INFINITY,
             alignment: TextAlignment::default(),
+            mode: LayoutMode::Cell,
         }
     }
 }
@@ -69,6 +102,7 @@ pub struct TuiTextLayoutBuilder {
     backgrounds: Vec<(Range<usize>, Color)>,
     max_width: f64,
     alignment: TextAlignment,
+    mode: LayoutMode,
 }
 
 impl TuiTextLayoutBuilder {
@@ -79,6 +113,18 @@ impl TuiTextLayoutBuilder {
     pub fn background_color(mut self, range: impl RangeBounds<usize>, color: Color) -> Self {
         let range = resolve_range(range, self.text.as_str().len());
         self.backgrounds.push((range, color));
+        self
+    }
+
+    /// Render this layout with a fixed-resolution big-text display font.
+    ///
+    /// This is a terminal-specific layout mode. `FontFamily` and `FontSize`
+    /// attributes are ignored because the glyph resolution is selected by
+    /// [`BigTextSize`]. Big text cannot be mixed inline with normal cell text;
+    /// create a separate layout for titles and body text.
+    #[cfg(feature = "big-text")]
+    pub fn big_text(mut self, size: BigTextSize) -> Self {
+        self.mode = LayoutMode::BigText(size);
         self
     }
 }
@@ -116,7 +162,7 @@ impl TextLayoutBuilder for TuiTextLayoutBuilder {
     }
 
     fn build(self) -> Result<Self::Out, Error> {
-        Ok(TuiTextLayout::from_builder(self))
+        TuiTextLayout::from_builder(self)
     }
 }
 
@@ -127,7 +173,7 @@ pub struct TuiTextLayout {
 }
 
 impl TuiTextLayout {
-    fn from_builder(builder: TuiTextLayoutBuilder) -> Self {
+    fn from_builder(builder: TuiTextLayoutBuilder) -> Result<Self, Error> {
         let layout = LayoutBuilder {
             text: builder.text.as_str(),
             config: &builder.config,
@@ -136,21 +182,25 @@ impl TuiTextLayout {
             backgrounds: &builder.backgrounds,
             max_width: builder.max_width,
             alignment: builder.alignment,
+            mode: builder.mode,
             lines: Vec::new(),
             graphemes: Vec::new(),
         }
-        .build();
+        .build()?;
 
-        Self {
+        Ok(Self {
             data: Rc::new(LayoutData {
                 text: builder.text,
                 config: builder.config,
                 size: layout.size,
                 trailing_whitespace_width: layout.trailing_whitespace_width,
+                line_height_cells: layout.line_height_cells,
                 lines: layout.lines,
                 graphemes: layout.graphemes,
+                #[cfg(feature = "big-text")]
+                big_text: layout.big_text,
             }),
-        }
+        })
     }
 
     pub(crate) fn data(&self) -> &LayoutData {
@@ -195,13 +245,14 @@ impl TextLayout for TuiTextLayout {
     fn line_metric(&self, line_number: usize) -> Option<LineMetric> {
         let line = self.data.lines.get(line_number)?;
         let cell_height = self.data.config.cell_height();
+        let line_height = self.data.line_height_cells as f64 * cell_height;
         Some(LineMetric {
             start_offset: line.start,
             end_offset: line.end,
             trailing_whitespace: line.trailing_whitespace,
-            baseline: cell_height * self.data.config.baseline_ratio,
-            height: cell_height,
-            y_offset: line_number as f64 * cell_height,
+            baseline: line_height * self.data.config.baseline_ratio,
+            height: line_height,
+            y_offset: line_number as f64 * line_height,
         })
     }
 
@@ -213,12 +264,13 @@ impl TextLayout for TuiTextLayout {
         let data = &self.data;
         let cell_width = data.config.cell_width();
         let cell_height = data.config.cell_height();
+        let line_height = data.line_height_cells as f64 * cell_height;
         let is_inside = point.x >= 0.0
             && point.y >= 0.0
             && point.x <= data.size.width
             && point.y <= data.size.height;
 
-        let line_index = ((point.y / cell_height).floor() as isize)
+        let line_index = ((point.y / line_height).floor() as isize)
             .clamp(0, data.lines.len().saturating_sub(1) as isize)
             as usize;
         let line = &data.lines[line_index];
@@ -262,6 +314,7 @@ impl TextLayout for TuiTextLayout {
         let line = &data.lines[line_index];
         let cell_width = data.config.cell_width();
         let cell_height = data.config.cell_height();
+        let line_height = data.line_height_cells as f64 * cell_height;
 
         let mut x = line.x_offset;
         for grapheme in &data.graphemes[line.grapheme_start..line.grapheme_end] {
@@ -275,7 +328,7 @@ impl TextLayout for TuiTextLayout {
             }
         }
 
-        let y = line_index as f64 * cell_height + cell_height * data.config.baseline_ratio;
+        let y = line_index as f64 * line_height + line_height * data.config.baseline_ratio;
         HitTestPosition::new(Point::new(x, y), line_index)
     }
 }
@@ -285,8 +338,11 @@ pub(crate) struct LayoutData {
     pub(crate) config: Arc<TuiConfig>,
     pub(crate) size: Size,
     pub(crate) trailing_whitespace_width: f64,
+    pub(crate) line_height_cells: usize,
     pub(crate) lines: Vec<LineData>,
     pub(crate) graphemes: Vec<GraphemeData>,
+    #[cfg(feature = "big-text")]
+    pub(crate) big_text: Option<BigTextRaster>,
 }
 
 pub(crate) struct LineData {
@@ -304,6 +360,8 @@ pub(crate) struct GraphemeData {
     pub(crate) start: usize,
     pub(crate) end: usize,
     pub(crate) cols: usize,
+    #[cfg_attr(not(feature = "big-text"), allow(dead_code))]
+    pub(crate) col: usize,
     pub(crate) x: f64,
     pub(crate) style: TextStyle,
 }
@@ -320,8 +378,11 @@ pub(crate) struct TextStyle {
 struct BuildResult {
     size: Size,
     trailing_whitespace_width: f64,
+    line_height_cells: usize,
     lines: Vec<LineData>,
     graphemes: Vec<GraphemeData>,
+    #[cfg(feature = "big-text")]
+    big_text: Option<BigTextRaster>,
 }
 
 struct ParaGrapheme {
@@ -351,12 +412,13 @@ struct LayoutBuilder<'a> {
     backgrounds: &'a [(Range<usize>, Color)],
     max_width: f64,
     alignment: TextAlignment,
+    mode: LayoutMode,
     lines: Vec<LineData>,
     graphemes: Vec<GraphemeData>,
 }
 
 impl LayoutBuilder<'_> {
-    fn build(mut self) -> BuildResult {
+    fn build(mut self) -> Result<BuildResult, Error> {
         let mut paragraph_start = 0;
         loop {
             let paragraph_end = self.text[paragraph_start..]
@@ -429,22 +491,70 @@ impl LayoutBuilder<'_> {
             .unwrap_or(0) as f64
             * cell_width;
 
-        BuildResult {
-            size: Size::new(width, self.lines.len().max(1) as f64 * cell_height),
+        let line_height_cells = self.mode.glyph_rows();
+        #[cfg(feature = "big-text")]
+        let big_text = self.build_big_text()?;
+
+        Ok(BuildResult {
+            size: Size::new(
+                width,
+                self.lines.len().max(1) as f64 * line_height_cells as f64 * cell_height,
+            ),
             trailing_whitespace_width,
+            line_height_cells,
             lines: self.lines,
             graphemes: self.graphemes,
+            #[cfg(feature = "big-text")]
+            big_text,
+        })
+    }
+
+    #[cfg(feature = "big-text")]
+    fn build_big_text(&self) -> Result<Option<BigTextRaster>, Error> {
+        let LayoutMode::BigText(size) = self.mode else {
+            return Ok(None);
+        };
+
+        let width_cells = self
+            .lines
+            .iter()
+            .map(|line| line.full_cols)
+            .max()
+            .unwrap_or(0);
+        let line_texts = self
+            .lines
+            .iter()
+            .map(|line| &self.text[line.start..line.end])
+            .collect::<Vec<_>>();
+        let raster = rasterize(&line_texts, size, width_cells)?;
+
+        for (line_index, line) in self.lines.iter().enumerate() {
+            let y = line_index * size.glyph_rows();
+            for grapheme in &self.graphemes[line.grapheme_start..line.grapheme_end] {
+                let text = &self.text[grapheme.start..grapheme.end];
+                if grapheme.cols == 0 || text.chars().all(char::is_whitespace) {
+                    continue;
+                }
+                if raster.is_blank(grapheme.col, y, grapheme.cols, size.glyph_rows()) {
+                    return Err(Error::NotSupported);
+                }
+            }
         }
+
+        Ok(Some(raster))
     }
 
     fn push_paragraph(&mut self, start: usize, end: usize) {
         let paragraph = &self.text[start..end];
         let mut infos = Vec::new();
+        let is_big_text = self.mode.is_big_text();
 
         for (offset, grapheme) in paragraph.grapheme_indices(true) {
-            let is_tab = grapheme == "\t";
+            let is_tab = !is_big_text && grapheme == "\t";
             let is_whitespace = grapheme.chars().all(char::is_whitespace);
-            let base_cols = if is_tab || grapheme.chars().all(char::is_control) {
+            let base_cols = if is_big_text {
+                self.mode.glyph_cols()
+            } else if is_tab || grapheme.chars().all(char::is_control) {
                 0
             } else {
                 grapheme.cell_width() as usize
@@ -539,6 +649,7 @@ impl LayoutBuilder<'_> {
                 start: info.start,
                 end: info.end,
                 cols,
+                col,
                 x,
                 style: self.resolve_style(info.start),
             });

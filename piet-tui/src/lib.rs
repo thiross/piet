@@ -17,12 +17,22 @@
 //! buffers, with nearest-neighbor or bilinear sampling. Because a terminal cell
 //! has only foreground and background colors, each cell renders two vertical
 //! image samples using an upper-half block (`▀`).
+//!
+//! With the optional `big-text` feature, text layouts can use fixed-resolution
+//! 8x8 bitmap display fonts through `BigTextSize`. Big text is a layout-wide
+//! mode: it has discrete cell footprints and cannot be mixed inline with normal
+//! text. It is intended for short display titles rather than body text.
 
 mod color;
 mod config;
 mod render;
 mod text;
 
+#[cfg(feature = "big-text")]
+mod big_text;
+
+#[cfg(feature = "big-text")]
+pub use big_text::BigTextSize;
 pub use config::TuiConfig;
 pub use render::{TuiBrush, TuiImage, TuiRenderContext, render_with};
 pub use text::{TuiText, TuiTextLayout, TuiTextLayoutBuilder};

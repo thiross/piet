@@ -10,9 +10,14 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 
+[features]
+default = []
+big-text = ["dep:tui-big-text"]
+
 [dependencies]
 piet = { workspace = true }
 ratatui-core = { version = "0.1.2", features = ["std"] }
+tui-big-text = { version = "0.8.10", optional = true }
 unicode-segmentation = "1.12.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
@@ -20,3 +25,8 @@ ratatui = { version = "0.30.2", default-features = false, features = ["crossterm
 
 [dev-dependencies]
 static_assertions = "1.1.0"
+
+[[example]]
+name = "big_text"
+path = "examples/big_text.rs"
+required-features = ["big-text"]
