@@ -97,5 +97,13 @@ Run the buffer-level big-text example with:
 cargo run -p piet-tui --features big-text --example big_text
 ```
 
+Run the scrollable Markdown viewer with the bundled sample, or pass another
+Markdown file:
+
+```sh
+cargo run -p piet-tui --example markdown
+cargo run -p piet-tui --example markdown -- path/to/document.md
+```
+
 `crossterm` is a dev-dependency of the example only. The library itself renders
 to a `ratatui-core::buffer::Buffer` and does not perform terminal I/O.
