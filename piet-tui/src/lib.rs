@@ -12,6 +12,11 @@
 //! terminal capabilities are supported: foreground color, bold, italic,
 //! underline, strikethrough, wrapping, and alignment. Font family and font size
 //! are accepted for API compatibility but are not rendered differently.
+//!
+//! Images support grayscale, RGB, separate-alpha RGBA, and premultiplied RGBA
+//! buffers, with nearest-neighbor or bilinear sampling. Because a terminal cell
+//! has only foreground and background colors, each cell renders two vertical
+//! image samples using an upper-half block (`▀`).
 
 mod color;
 mod config;

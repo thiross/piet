@@ -3,8 +3,8 @@
 
 use piet::kurbo::{Affine, Line, Point, Rect, Shape};
 use piet::{
-    Color, FontStyle, FontWeight, LineCap, RenderContext, StrokeStyle, Text as _, TextAttribute,
-    TextLayoutBuilder,
+    Color, Error, FontStyle, FontWeight, ImageFormat, InterpolationMode, LineCap, RenderContext,
+    StrokeStyle, Text as _, TextAttribute, TextLayoutBuilder,
 };
 use piet_tui::{TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
@@ -423,5 +423,327 @@ fn non_positive_stroke_width_draws_nothing() {
 
     for x in 0..5 {
         assert_eq!(buffer.cell((x, 0)).unwrap().bg, TuiColor::Reset);
+    }
+}
+
+#[test]
+fn draws_two_row_image_with_half_blocks() {
+    let mut buffer = empty_buffer(2, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image(
+                1,
+                2,
+                &[255, 0, 0, 255, 0, 0, 255, 255],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        assert_eq!(image.width(), 1);
+        assert_eq!(image.height(), 2);
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    let cell = buffer.cell((0, 0)).unwrap();
+    assert_eq!(cell.symbol(), "▀");
+    assert_eq!(cell.fg, TuiColor::Rgb(255, 0, 0));
+    assert_eq!(cell.bg, TuiColor::Rgb(0, 0, 255));
+    assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), " ");
+}
+
+#[test]
+fn supports_grayscale_rgb_and_rgba_image_formats() {
+    let mut buffer = empty_buffer(1, 3);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let grayscale = context
+            .make_image(1, 2, &[0, 255], ImageFormat::Grayscale)
+            .unwrap();
+        context.draw_image(
+            &grayscale,
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+
+        let rgb = context
+            .make_image(1, 2, &[255, 0, 0, 0, 255, 0], ImageFormat::Rgb)
+            .unwrap();
+        context.draw_image(
+            &rgb,
+            Rect::new(0.0, 1.0, 1.0, 2.0),
+            InterpolationMode::NearestNeighbor,
+        );
+
+        let premultiplied = context
+            .make_image(
+                1,
+                2,
+                &[128, 0, 0, 128, 0, 0, 255, 255],
+                ImageFormat::RgbaPremul,
+            )
+            .unwrap();
+        context.draw_image(
+            &premultiplied,
+            Rect::new(0.0, 2.0, 1.0, 3.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    let grayscale = buffer.cell((0, 0)).unwrap();
+    assert_eq!(grayscale.fg, TuiColor::Rgb(0, 0, 0));
+    assert_eq!(grayscale.bg, TuiColor::Rgb(255, 255, 255));
+
+    let rgb = buffer.cell((0, 1)).unwrap();
+    assert_eq!(rgb.fg, TuiColor::Rgb(255, 0, 0));
+    assert_eq!(rgb.bg, TuiColor::Rgb(0, 255, 0));
+
+    let premultiplied = buffer.cell((0, 2)).unwrap();
+    assert_eq!(premultiplied.fg, TuiColor::Rgb(128, 0, 0));
+    assert_eq!(premultiplied.bg, TuiColor::Rgb(0, 0, 255));
+}
+
+#[test]
+fn image_stride_selects_the_correct_pixels() {
+    let mut buffer = empty_buffer(2, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image_with_stride(
+                2,
+                2,
+                8,
+                &[
+                    255, 0, 0, 0, 255, 0, 9, 9, // red, green, padding
+                    0, 0, 255, 255, 255, 255, 9, 9, // blue, white, padding
+                ],
+                ImageFormat::Rgb,
+            )
+            .unwrap();
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().fg, TuiColor::Rgb(255, 0, 0));
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(0, 0, 255));
+    assert_eq!(buffer.cell((1, 0)).unwrap().fg, TuiColor::Rgb(0, 255, 0));
+    assert_eq!(
+        buffer.cell((1, 0)).unwrap().bg,
+        TuiColor::Rgb(255, 255, 255)
+    );
+}
+
+#[test]
+fn too_short_image_buffer_is_rejected() {
+    let mut buffer = empty_buffer(1, 1);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+    let error = context
+        .make_image_with_stride(2, 2, 4, &[0; 8], ImageFormat::Rgb)
+        .unwrap_err();
+
+    assert!(matches!(error, Error::InvalidInput));
+}
+
+#[test]
+fn draw_image_area_crops_the_source_rect() {
+    let mut buffer = empty_buffer(1, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image(
+                2,
+                2,
+                &[
+                    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+                ],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.draw_image_area(
+            &image,
+            Rect::new(1.0, 0.0, 2.0, 2.0),
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().fg, TuiColor::Rgb(0, 255, 0));
+    assert_eq!(
+        buffer.cell((0, 0)).unwrap().bg,
+        TuiColor::Rgb(255, 255, 255)
+    );
+}
+
+#[test]
+fn bilinear_interpolation_blends_neighboring_pixels() {
+    let pixels = [
+        0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255,
+    ];
+
+    let mut nearest_buffer = empty_buffer(2, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut nearest_buffer, TuiConfig::default());
+        let image = context
+            .make_image(2, 2, &pixels, ImageFormat::RgbaSeparate)
+            .unwrap();
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+    assert_eq!(
+        nearest_buffer.cell((0, 0)).unwrap().fg,
+        TuiColor::Rgb(0, 0, 0)
+    );
+
+    let mut bilinear_buffer = empty_buffer(2, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut bilinear_buffer, TuiConfig::default());
+        let image = context
+            .make_image(2, 2, &pixels, ImageFormat::RgbaSeparate)
+            .unwrap();
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            InterpolationMode::Bilinear,
+        );
+    }
+    assert_eq!(
+        bilinear_buffer.cell((0, 0)).unwrap().fg,
+        TuiColor::Rgb(128, 128, 128)
+    );
+    assert_eq!(
+        bilinear_buffer.cell((1, 0)).unwrap().fg,
+        TuiColor::Rgb(255, 255, 255)
+    );
+}
+
+#[test]
+fn translucent_image_pixels_blend_over_the_cell_background() {
+    let mut buffer = empty_buffer(1, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.clear(Some(Rect::new(0.0, 0.0, 1.0, 1.0)), Color::BLACK);
+        let image = context
+            .make_image(
+                1,
+                2,
+                &[255, 0, 0, 128, 0, 255, 0, 0],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    let cell = buffer.cell((0, 0)).unwrap();
+    assert_eq!(cell.fg, TuiColor::Rgb(128, 0, 0));
+    assert_eq!(cell.bg, TuiColor::Rgb(0, 0, 0));
+}
+
+#[test]
+fn image_respects_transform_and_clip() {
+    let mut buffer = empty_buffer(4, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image(
+                1,
+                2,
+                &[255, 0, 0, 255, 0, 0, 255, 255],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.transform(Affine::translate((1.0, 0.0)));
+        context.clip(Rect::new(0.0, 0.0, 1.0, 1.0));
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().symbol(), "▀");
+    assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
+}
+
+#[test]
+fn degenerate_transforms_draw_no_image() {
+    let mut buffer = empty_buffer(2, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image(
+                1,
+                2,
+                &[255, 0, 0, 255, 0, 0, 255, 255],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.transform(Affine::scale(0.0));
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), " ");
+    assert_eq!(buffer.cell((0, 0)).unwrap().fg, TuiColor::Reset);
+}
+
+#[test]
+fn empty_and_invalid_images_draw_nothing() {
+    let mut buffer = empty_buffer(2, 1);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let empty = context
+            .make_image(0, 0, &[], ImageFormat::RgbaSeparate)
+            .unwrap();
+        context.draw_image(
+            &empty,
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+
+        let image = context
+            .make_image(
+                1,
+                2,
+                &[255, 0, 0, 255, 0, 0, 255, 255],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.draw_image_area(
+            &image,
+            Rect::new(0.0, 0.0, -1.0, 1.0),
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 0.0, 0.0),
+            InterpolationMode::NearestNeighbor,
+        );
+        context.draw_image(
+            &image,
+            Rect::new(f64::NAN, 0.0, 1.0, 1.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    for x in 0..2 {
+        assert_eq!(buffer.cell((x, 0)).unwrap().symbol(), " ");
+        assert_eq!(buffer.cell((x, 0)).unwrap().fg, TuiColor::Reset);
     }
 }

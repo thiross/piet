@@ -4,6 +4,7 @@
 //! The Piet render context implementation backed by a ratatui `Buffer`.
 
 use std::borrow::Cow;
+use std::fmt;
 use std::sync::Arc;
 
 use piet::kurbo::{
@@ -52,16 +53,76 @@ impl<'a> IntoBrush<TuiRenderContext<'a>> for TuiBrush {
 
 /// An image handle for the terminal backend.
 ///
-/// Image creation is not implemented in the terminal backend yet; this type
-/// exists so the associated type is concrete and can be extended later.
-#[derive(Clone, Debug)]
+/// Pixels are normalized to RGBA and rendered with upper-half block characters,
+/// so each terminal cell can represent two vertical image samples.
+#[derive(Clone)]
 pub struct TuiImage {
-    size: Size,
+    width: usize,
+    height: usize,
+    pixels: Arc<[[u8; 4]]>,
 }
 
 impl PietImage for TuiImage {
     fn size(&self) -> Size {
-        self.size
+        Size::new(self.width as f64, self.height as f64)
+    }
+}
+
+impl fmt::Debug for TuiImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TuiImage")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TuiImage {
+    /// The width of the image in pixels.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The height of the image in pixels.
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    fn pixel(&self, x: usize, y: usize) -> [u8; 4] {
+        self.pixels[y * self.width + x]
+    }
+
+    fn sample(&self, x: f64, y: f64, interpolation: InterpolationMode) -> [u8; 4] {
+        if self.width == 0
+            || self.height == 0
+            || !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
+            || y < 0.0
+            || x >= self.width as f64
+            || y >= self.height as f64
+        {
+            return [0; 4];
+        }
+
+        match interpolation {
+            InterpolationMode::NearestNeighbor => self.pixel(x as usize, y as usize),
+            InterpolationMode::Bilinear => {
+                let x0 = x.floor() as usize;
+                let y0 = y.floor() as usize;
+                let x1 = (x0 + 1).min(self.width - 1);
+                let y1 = (y0 + 1).min(self.height - 1);
+                let tx = x - x0 as f64;
+                let ty = y - y0 as f64;
+                let samples = [
+                    (self.pixel(x0, y0), (1.0 - tx) * (1.0 - ty)),
+                    (self.pixel(x1, y0), tx * (1.0 - ty)),
+                    (self.pixel(x0, y1), (1.0 - tx) * ty),
+                    (self.pixel(x1, y1), tx * ty),
+                ];
+                bilinear_samples(samples)
+            }
+        }
     }
 }
 
@@ -297,6 +358,86 @@ impl<'a> TuiRenderContext<'a> {
         self.fill_path(&outline, &brush, false);
     }
 
+    fn draw_image_area_impl(
+        &mut self,
+        image: &TuiImage,
+        src_rect: Rect,
+        dst_rect: Rect,
+        interpolation: InterpolationMode,
+    ) {
+        if image.width == 0
+            || image.height == 0
+            || !src_rect.is_finite()
+            || !dst_rect.is_finite()
+            || src_rect.width() <= 0.0
+            || src_rect.height() <= 0.0
+            || dst_rect.width() <= 0.0
+            || dst_rect.height() <= 0.0
+        {
+            return;
+        }
+
+        let transform = self.state.transform;
+        let determinant = transform.determinant();
+        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+            return;
+        }
+
+        let inverse = transform.inverse();
+        let bounds = transformed_bounds(dst_rect, transform);
+        if !bounds.is_finite() {
+            return;
+        }
+        let (col0, row0, col1, row1) = self.cell_range(bounds);
+        let cell_width = self.config.cell_width();
+        let cell_height = self.config.cell_height();
+
+        for row in row0..row1 {
+            for col in col0..col1 {
+                let top_point = Point::new(
+                    (col as f64 + 0.5) * cell_width,
+                    (row as f64 + 0.25) * cell_height,
+                );
+                let bottom_point = Point::new(
+                    (col as f64 + 0.5) * cell_width,
+                    (row as f64 + 0.75) * cell_height,
+                );
+                let top = sample_image(
+                    image,
+                    inverse * top_point,
+                    src_rect,
+                    dst_rect,
+                    interpolation,
+                );
+                let bottom = sample_image(
+                    image,
+                    inverse * bottom_point,
+                    src_rect,
+                    dst_rect,
+                    interpolation,
+                );
+                if top[3] == 0 && bottom[3] == 0 {
+                    continue;
+                }
+
+                let Some(cell) = self.cell_mut(col, row) else {
+                    continue;
+                };
+                let background = cell.bg;
+                let foreground =
+                    blend_over(Color::rgba8(top[0], top[1], top[2], top[3]), background);
+                let lower = blend_over(
+                    Color::rgba8(bottom[0], bottom[1], bottom[2], bottom[3]),
+                    background,
+                );
+                cell.reset();
+                cell.fg = foreground;
+                cell.bg = lower;
+                cell.set_symbol("▀");
+            }
+        }
+    }
+
     fn write_text_cell(&mut self, col: usize, row: usize, symbol: &str, style: &TextStyle) -> bool {
         let Some(cell) = self.cell_mut(col, row) else {
             return false;
@@ -483,30 +624,62 @@ impl RenderContext for TuiRenderContext<'_> {
 
     fn make_image_with_stride(
         &mut self,
-        _width: usize,
-        _height: usize,
-        _stride: usize,
-        _buf: &[u8],
-        _format: ImageFormat,
+        width: usize,
+        height: usize,
+        stride: usize,
+        buf: &[u8],
+        format: ImageFormat,
     ) -> Result<Self::Image, Error> {
-        Err(Error::NotSupported)
+        let pixel_count = width.checked_mul(height).ok_or(Error::InvalidInput)?;
+        let packed =
+            piet::util::image_buffer_to_tightly_packed(buf, width, height, stride, format)?;
+        let bytes_per_pixel = format.bytes_per_pixel();
+        let mut pixels = Vec::with_capacity(pixel_count);
+
+        for pixel in packed.chunks_exact(bytes_per_pixel) {
+            pixels.push(match format {
+                ImageFormat::Grayscale => [pixel[0], pixel[0], pixel[0], 255],
+                ImageFormat::Rgb => [pixel[0], pixel[1], pixel[2], 255],
+                ImageFormat::RgbaSeparate => [pixel[0], pixel[1], pixel[2], pixel[3]],
+                ImageFormat::RgbaPremul => {
+                    let alpha = pixel[3];
+                    [
+                        piet::util::unpremul(pixel[0], alpha),
+                        piet::util::unpremul(pixel[1], alpha),
+                        piet::util::unpremul(pixel[2], alpha),
+                        alpha,
+                    ]
+                }
+                _ => return Err(Error::NotSupported),
+            });
+        }
+
+        Ok(TuiImage {
+            width,
+            height,
+            pixels: pixels.into(),
+        })
     }
 
     fn draw_image(
         &mut self,
-        _image: &Self::Image,
-        _dst_rect: impl Into<Rect>,
-        _interp: InterpolationMode,
+        image: &Self::Image,
+        dst_rect: impl Into<Rect>,
+        interp: InterpolationMode,
     ) {
+        let dst_rect = dst_rect.into();
+        let src_rect = Rect::new(0.0, 0.0, image.width as f64, image.height as f64);
+        self.draw_image_area_impl(image, src_rect, dst_rect, interp);
     }
 
     fn draw_image_area(
         &mut self,
-        _image: &Self::Image,
-        _src_rect: impl Into<Rect>,
-        _dst_rect: impl Into<Rect>,
-        _interp: InterpolationMode,
+        image: &Self::Image,
+        src_rect: impl Into<Rect>,
+        dst_rect: impl Into<Rect>,
+        interp: InterpolationMode,
     ) {
+        self.draw_image_area_impl(image, src_rect.into(), dst_rect.into(), interp);
     }
 
     fn capture_image_area(&mut self, _src_rect: impl Into<Rect>) -> Result<Self::Image, Error> {
@@ -639,6 +812,72 @@ fn mix_color(a: Color, b: Color, t: f32) -> Color {
     Color::rgba8(mix(ar, br), mix(ag, bg), mix(ab, bb), mix(aa, ba))
 }
 
+fn transformed_bounds(rect: Rect, transform: Affine) -> Rect {
+    let p0 = transform * Point::new(rect.x0, rect.y0);
+    let p1 = transform * Point::new(rect.x1, rect.y0);
+    let p2 = transform * Point::new(rect.x1, rect.y1);
+    let p3 = transform * Point::new(rect.x0, rect.y1);
+
+    Rect::new(
+        p0.x.min(p1.x).min(p2.x).min(p3.x),
+        p0.y.min(p1.y).min(p2.y).min(p3.y),
+        p0.x.max(p1.x).max(p2.x).max(p3.x),
+        p0.y.max(p1.y).max(p2.y).max(p3.y),
+    )
+}
+
+fn sample_image(
+    image: &TuiImage,
+    point: Point,
+    src_rect: Rect,
+    dst_rect: Rect,
+    interpolation: InterpolationMode,
+) -> [u8; 4] {
+    if !point.x.is_finite()
+        || !point.y.is_finite()
+        || point.x < dst_rect.x0
+        || point.y < dst_rect.y0
+        || point.x >= dst_rect.x1
+        || point.y >= dst_rect.y1
+    {
+        return [0; 4];
+    }
+
+    let u = (point.x - dst_rect.x0) / dst_rect.width();
+    let v = (point.y - dst_rect.y0) / dst_rect.height();
+    let x = src_rect.x0 + u * src_rect.width();
+    let y = src_rect.y0 + v * src_rect.height();
+    image.sample(x, y, interpolation)
+}
+
+fn bilinear_samples(samples: [([u8; 4], f64); 4]) -> [u8; 4] {
+    let mut red = 0.0;
+    let mut green = 0.0;
+    let mut blue = 0.0;
+    let mut alpha = 0.0;
+
+    for (pixel, weight) in samples {
+        let pixel_alpha = pixel[3] as f64 / 255.0;
+        let weight = pixel_alpha * weight;
+        red += pixel[0] as f64 / 255.0 * weight;
+        green += pixel[1] as f64 / 255.0 * weight;
+        blue += pixel[2] as f64 / 255.0 * weight;
+        alpha += weight;
+    }
+
+    if alpha <= 0.0 {
+        return [0; 4];
+    }
+
+    let channel = |value: f64| (value / alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+    [
+        channel(red),
+        channel(green),
+        channel(blue),
+        (alpha * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]
+}
+
 fn even_odd_contains(path: &BezPath, point: Point) -> bool {
     let mut inside = false;
     let mut current = None;
@@ -713,5 +952,17 @@ mod tests {
         let stroke = kurbo_stroke(&style, 1.0);
 
         assert!(stroke.dash_pattern.is_empty());
+    }
+
+    #[test]
+    fn bilinear_interpolation_is_alpha_aware() {
+        let samples = [
+            ([255, 0, 0, 255], 0.5),
+            ([0, 0, 0, 0], 0.5),
+            ([0, 0, 0, 0], 0.0),
+            ([0, 0, 0, 0], 0.0),
+        ];
+
+        assert_eq!(bilinear_samples(samples), [255, 0, 0, 128]);
     }
 }

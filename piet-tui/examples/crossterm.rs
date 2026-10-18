@@ -16,10 +16,10 @@ mod native {
 
     use piet::kurbo::{Line, Point, Rect};
     use piet::{
-        Color, FontStyle, FontWeight, RenderContext, StrokeStyle, Text as _, TextAttribute,
-        TextLayoutBuilder,
+        Color, FontStyle, FontWeight, ImageFormat, InterpolationMode, RenderContext, StrokeStyle,
+        Text as _, TextAttribute, TextLayoutBuilder,
     };
-    use piet_tui::{TuiConfig, render_with};
+    use piet_tui::{TuiConfig, TuiImage, TuiRenderContext, render_with};
     use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use ratatui::{DefaultTerminal, Frame};
 
@@ -79,6 +79,15 @@ mod native {
                 .unwrap();
             context.draw_text(&body, Point::new(1.0, 2.0));
 
+            if area.width > 8 && area.height >= 14 {
+                let image = gradient_image(context, (area.width - 4).min(48) as usize, 8);
+                context.draw_image(
+                    &image,
+                    Rect::new(2.0, 6.0, 2.0 + image.width() as f64, 10.0),
+                    InterpolationMode::Bilinear,
+                );
+            }
+
             let separator_style = StrokeStyle::new().dash_pattern(&[3.0, 2.0]);
             context.stroke_styled(
                 Line::new((1.0, 4.5), (area.width.saturating_sub(1) as f64, 4.5)),
@@ -95,5 +104,21 @@ mod native {
                 .unwrap();
             context.draw_text(&help, Point::new(1.0, area.height.saturating_sub(2) as f64));
         });
+    }
+
+    fn gradient_image(context: &mut TuiRenderContext<'_>, width: usize, height: usize) -> TuiImage {
+        let mut pixels = Vec::with_capacity(width * height * 4);
+        for y in 0..height {
+            for x in 0..width {
+                let red = (x * 255 / width.max(1)) as u8;
+                let green = (y * 255 / height.max(1)) as u8;
+                let blue = 255 - red;
+                pixels.extend_from_slice(&[red, green, blue, 255]);
+            }
+        }
+
+        context
+            .make_image(width, height, &pixels, ImageFormat::RgbaSeparate)
+            .unwrap()
     }
 }

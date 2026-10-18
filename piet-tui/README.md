@@ -10,10 +10,15 @@ This crate is intentionally independent of `piet-common`: depending on
 dependencies.
 
 The current implementation covers text layout/rendering, `fill`, `fill_even_odd`,
-`stroke`, `stroke_styled`, `clear`, clipping, and basic transform state. Text is
-rendered on the terminal cell grid; font family and font size are accepted by
-the Piet API but cannot be represented by a terminal. Images are not implemented
-yet.
+`stroke`, `stroke_styled`, `clear`, clipping, images, and basic transform state.
+Text is rendered on the terminal cell grid; font family and font size are
+accepted by the Piet API but cannot be represented by a terminal.
+
+Images support grayscale, RGB, separate-alpha RGBA, and premultiplied RGBA
+formats. Sampling can be nearest-neighbor or bilinear, and `draw_image_area`
+supports source cropping with scaling. Each terminal cell has only a foreground
+and background color, so the backend renders two vertical image samples per cell
+with an upper-half block (`▀`). `capture_image_area` is not supported.
 
 ## Why not a feature on `piet`?
 
