@@ -3,8 +3,9 @@
 
 use piet::kurbo::{Affine, Line, Point, Rect, Shape};
 use piet::{
-    Color, Error, FontStyle, FontWeight, ImageFormat, InterpolationMode, LineCap, RenderContext,
-    StrokeStyle, Text as _, TextAttribute, TextLayoutBuilder,
+    Color, Error, FixedGradient, FixedRadialGradient, FontStyle, FontWeight, GradientStop,
+    ImageFormat, InterpolationMode, LineCap, LinearGradient, RenderContext, StrokeStyle, Text as _,
+    TextAttribute, TextLayoutBuilder, UnitPoint,
 };
 use piet_tui::{TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
@@ -424,6 +425,111 @@ fn non_positive_stroke_width_draws_nothing() {
     for x in 0..5 {
         assert_eq!(buffer.cell((x, 0)).unwrap().bg, TuiColor::Reset);
     }
+}
+
+#[test]
+fn linear_gradient_is_sampled_per_cell() {
+    let mut buffer = empty_buffer(5, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let gradient = LinearGradient::new(
+            UnitPoint::LEFT,
+            UnitPoint::RIGHT,
+            (Color::BLACK, Color::WHITE),
+        );
+        context.fill(Rect::new(0.0, 0.0, 4.0, 1.0), &gradient);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(32, 32, 32));
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(96, 96, 96));
+    assert_eq!(
+        buffer.cell((2, 0)).unwrap().bg,
+        TuiColor::Rgb(159, 159, 159)
+    );
+    assert_eq!(
+        buffer.cell((3, 0)).unwrap().bg,
+        TuiColor::Rgb(223, 223, 223)
+    );
+}
+
+#[test]
+fn fixed_radial_gradient_uses_cell_center_distance() {
+    let mut buffer = empty_buffer(3, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let gradient = FixedGradient::Radial(FixedRadialGradient {
+            center: Point::new(0.5, 0.5),
+            origin_offset: Default::default(),
+            radius: 0.5,
+            stops: vec![
+                GradientStop {
+                    pos: 0.0,
+                    color: Color::WHITE,
+                },
+                GradientStop {
+                    pos: 1.0,
+                    color: Color::BLACK,
+                },
+            ],
+        });
+        context.fill(Rect::new(0.0, 0.0, 2.0, 2.0), &gradient);
+    }
+
+    assert_eq!(
+        buffer.cell((0, 0)).unwrap().bg,
+        TuiColor::Rgb(255, 255, 255)
+    );
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(0, 0, 0));
+    assert_eq!(buffer.cell((0, 1)).unwrap().bg, TuiColor::Rgb(0, 0, 0));
+}
+
+#[test]
+fn save_and_restore_preserve_transform_state() {
+    let mut buffer = empty_buffer(4, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.save().unwrap();
+        context.transform(Affine::translate((2.0, 0.0)));
+        context.fill(Rect::new(0.0, 0.0, 1.0, 1.0), &Color::rgb8(255, 0, 0));
+        context.restore().unwrap();
+        context.fill(Rect::new(0.0, 0.0, 1.0, 1.0), &Color::rgb8(0, 0, 255));
+        assert_eq!(context.current_transform(), Affine::IDENTITY);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(0, 0, 255));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Rgb(255, 0, 0));
+}
+
+#[test]
+fn rotated_image_is_sampled_through_the_inverse_transform() {
+    let mut buffer = empty_buffer(3, 3);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let image = context
+            .make_image(
+                2,
+                2,
+                &[
+                    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+                ],
+                ImageFormat::RgbaSeparate,
+            )
+            .unwrap();
+        context.transform(Affine::rotate_about(
+            std::f64::consts::FRAC_PI_2,
+            Point::new(1.0, 1.0),
+        ));
+        context.draw_image(
+            &image,
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            InterpolationMode::NearestNeighbor,
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().fg, TuiColor::Rgb(0, 0, 255));
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(0, 0, 255));
+    assert_eq!(buffer.cell((1, 0)).unwrap().fg, TuiColor::Rgb(255, 0, 0));
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(255, 0, 0));
 }
 
 #[test]

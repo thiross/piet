@@ -22,6 +22,11 @@
 //! 8x8 bitmap display fonts through `BigTextSize`. Big text is a layout-wide
 //! mode: it has discrete cell footprints and cannot be mixed inline with normal
 //! text. It is intended for short display titles rather than body text.
+//!
+//! Text, including big text, uses the current transform only to position its
+//! origin. Terminal cells cannot scale, rotate, or shear glyphs, so those parts
+//! of the transform are ignored for text. Canvas fills, strokes, clips, and
+//! images support the full affine transform.
 
 mod color;
 mod config;

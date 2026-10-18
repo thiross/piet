@@ -42,6 +42,11 @@ Greek, Hiragana, and a few other scripts are available, but CJK Han characters
 are not. Unsupported non-whitespace glyphs make layout construction fail with
 `Error::NotSupported`.
 
+Text, including big text, uses the current transform only to position its
+origin. Terminal cells cannot scale, rotate, or shear glyphs, so those parts of
+the transform are ignored for text. Canvas fills, strokes, clips, and images
+support the full affine transform.
+
 ## Why not a feature on `piet`?
 
 `piet` itself is backend-neutral and does not depend on Cairo, CoreGraphics,

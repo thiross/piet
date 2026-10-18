@@ -15,6 +15,7 @@ members = [
 
 default-members = [
     "piet",
+    "piet-tui",
     "piet-common",
     "piet-web",
     "piet-web/examples/basic",
