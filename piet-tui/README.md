@@ -5,9 +5,9 @@ It renders Piet drawing commands into a
 [`ratatui`](https://crates.io/crates/ratatui-core) `Buffer`, which can then be
 flushed by any ratatui backend, including `ratatui-crossterm`.
 
-This crate is intentionally independent of `piet-common`: depending on
-`piet-tui` directly does not pull in Cairo, CoreGraphics, Direct2D, or web
-dependencies.
+This crate can be used directly or selected through the `tui` feature of
+`piet-common`. Depending on `piet-tui` directly does not pull in Cairo,
+CoreGraphics, Direct2D, or web dependencies.
 
 The current implementation covers text layout/rendering, `fill`, `fill_even_odd`,
 `stroke`, `stroke_styled`, `clear`, clipping, images, and basic transform state.
@@ -67,7 +67,21 @@ ignore the current transform, but respect the context area and active clip.
 Borders and other widget-level behavior should be implemented by the
 application or UI framework on top of these primitives.
 
-## Why not a feature on `piet`?
+## Using `piet-common`
+
+`piet-common` exposes the same render context and associated types behind its
+`tui` feature. Disable default features so the native backend and its GUI
+dependencies are not enabled:
+
+```toml
+piet-common = { version = "0.8", default-features = false, features = ["tui"] }
+```
+
+The `piet-common` version also provides `Device` and `BitmapTarget` wrappers
+around a ratatui `Buffer`. Pixel extraction and PNG export are not supported by
+the terminal backend; inspect or display the buffer instead. Enable the
+`tui-big-text` feature on `piet-common` to forward to this crate's `big-text`
+feature.
 
 `piet` itself is backend-neutral and does not depend on Cairo, CoreGraphics,
 Direct2D, or the web APIs; the native backends are selected by `piet-common`.
@@ -75,9 +89,9 @@ Adding a `tui` feature to `piet` therefore would not remove any GUI dependency.
 Keeping `piet-tui` as a separate backend crate also avoids dependency cycles and
 lets applications opt into only the terminal renderer they need.
 
-Cargo features are additive, so a `tui` feature on `piet-common` could not
-automatically suppress its default native backend. Applications that want TUI
-rendering should depend on `piet-tui` directly.
+Cargo features are additive. `piet-common` selects the TUI backend whenever its
+`tui` feature is enabled, but the default `native` feature still enables the
+platform GUI dependencies unless `default-features = false` is specified.
 
 ## Example
 

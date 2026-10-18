@@ -2,8 +2,24 @@
 
 Automatically chooses the appropriate implementation of the [Piet][] 2D graphics API for the current platform.
 
-On Windows, the backend will be [piet-direct2d][], on macOS [piet-coregraphics][], and on Linux, OpenBSD, FreeBSD, and NetBSD [piet-cairo][].
-The [piet-web][] backend will be selected when targeting `wasm32`.
+By default, the backend is [piet-direct2d][] on Windows, [piet-coregraphics][] on
+macOS and iOS, and [piet-cairo][] on Linux, OpenBSD, FreeBSD, and NetBSD. The
+[piet-web][] backend is selected when targeting `wasm32`.
+
+The optional `tui` feature selects the terminal backend from
+[piet-tui](https://crates.io/crates/piet-tui). Because Cargo features are
+additive, disable default features to avoid pulling in the native GUI
+dependencies:
+
+```toml
+piet-common = { version = "0.8", default-features = false, features = ["tui"] }
+```
+
+The terminal backend renders into a `ratatui-core::buffer::Buffer` and supports
+rich text, fills, strokes, clipping, transforms, gradients, and images. Its
+`BitmapTarget` exposes the underlying buffer, while pixel extraction and PNG
+export return `Error::NotSupported`. Enable the `tui-big-text` feature to use
+the terminal display-font layouts.
 
 ## Minimum supported Rust Version (MSRV)
 

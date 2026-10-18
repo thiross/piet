@@ -11,6 +11,7 @@ use wasm_bindgen_test::*;
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
+#[cfg(not(feature = "tui"))]
 use kurbo::{Point, Size};
 use piet_common::*;
 
@@ -53,10 +54,12 @@ trait FactoryHelpers {
         self.make_layout(text, FontFamily::MONOSPACE, 12.0, None)
     }
 
+    #[cfg(not(feature = "tui"))]
     fn measure_width(&mut self, text: &str, font: FontFamily, size: f64) -> Size {
         self.make_layout(text, font, size, None).size()
     }
 
+    #[cfg(not(feature = "tui"))]
     fn get_mono_width(&mut self, size: f64) -> f64 {
         //FIXME: would be nice to have this check against another glyph to ensure
         //we're actually monospace, but that would currently break cairo
@@ -201,6 +204,7 @@ fn hit_test_interior_byte() {
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg(not(feature = "tui"))]
 fn hit_test_point_rounding() {
     let mut factory = make_factory();
     let unit_width = factory.get_mono_width(12.0);
@@ -219,6 +223,7 @@ fn hit_test_point_rounding() {
 #[test]
 //FIXME: wasm is failing this, and i haven't investigated
 //#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg(not(feature = "tui"))]
 fn hit_test_point_outside() {
     let mut factory = make_factory();
     let unit_width = factory.get_mono_width(12.0);
@@ -264,6 +269,7 @@ fn hit_test_point_outside() {
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg(not(feature = "tui"))]
 fn hit_test_point_multibyte() {
     let mut factory = make_factory();
     // 4 graphemes, 4 code points, 10 bytes
@@ -296,6 +302,7 @@ fn hit_test_point_multibyte() {
 /// the same text without the newline.
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg(not(feature = "tui"))]
 fn newline_eof() {
     let mut factory = make_factory();
     let text = "A";
@@ -341,6 +348,7 @@ fn newline_eof() {
 }
 
 #[test]
+#[cfg(not(feature = "tui"))]
 fn eol_hit_testing() {
     let mut factory = make_factory();
 
@@ -385,6 +393,7 @@ fn debug_impl_exists() {
 
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+#[cfg(not(feature = "tui"))]
 fn width_sanity() {
     let mut factory = make_factory();
     let text = "hello";
@@ -401,7 +410,7 @@ fn width_sanity() {
 #[test]
 //FIXME: disabled on linux until pango lands, and wasm until we have proper text there.
 //#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(not(target_os = "linux"), not(feature = "tui")))]
 fn emergency_break_selections() {
     let mut factory = make_factory();
     let mono_width = factory.get_mono_width(16.0);

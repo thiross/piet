@@ -105,6 +105,19 @@ pub struct TuiTextLayoutBuilder {
     mode: LayoutMode,
 }
 
+impl std::fmt::Debug for TuiTextLayoutBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TuiTextLayoutBuilder")
+            .field("text", &self.text.as_str())
+            .field("max_width", &self.max_width)
+            .field("alignment", &self.alignment)
+            .field("attribute_count", &self.attributes.len())
+            .field("background_count", &self.backgrounds.len())
+            .field("mode", &self.mode)
+            .finish()
+    }
+}
+
 impl TuiTextLayoutBuilder {
     /// Set a background color for a byte range.
     ///

@@ -7,6 +7,19 @@
 //! for the given platform. It also exposes [kurbo], which defines shape and
 //! curve types useful in drawing, and [image] for image manipulation.
 //!
+//! By default a native backend is selected for the target platform. Enable the
+//! `tui` feature with `default-features = false` to use the terminal backend
+//! instead, without pulling in Cairo, CoreGraphics, Direct2D, or web
+//! dependencies:
+//!
+//! ```toml
+//! piet-common = { version = "0.8", default-features = false, features = ["tui"] }
+//! ```
+//!
+//! Cargo features are additive, so enabling `tui` without disabling default
+//! features still enables the `native` feature and its GUI dependencies. When
+//! both features are present, the TUI backend is selected.
+//!
 //! The intention of this crate is to provide a single dependency that handles
 //! the common piet use-case. If you have more complicated needs (such as
 //! supporting multiple backends simultaneously) you should use crates such as
@@ -34,7 +47,12 @@
 pub use piet::*;
 
 cfg_if::cfg_if! {
-     if #[cfg(target_arch = "wasm32")] {
+    if #[cfg(feature = "tui")] {
+        #[path = "tui_back.rs"]
+        mod backend;
+    } else if #[cfg(not(feature = "native"))] {
+        compile_error!("piet-common requires either the `native` or `tui` feature");
+    } else if #[cfg(target_arch = "wasm32")] {
         #[path = "web_back.rs"]
         mod backend;
     } else if #[cfg(any(target_os = "linux", target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))] {
