@@ -6,10 +6,13 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use piet::kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Size, flatten};
+use piet::kurbo::{
+    Affine, BezPath, Cap as KurboCap, Join as KurboJoin, PathEl, Point, Rect, Shape, Size, Stroke,
+    StrokeOpts, flatten, stroke as expand_stroke,
+};
 use piet::{
     Color, Error, FixedGradient, GradientStop, Image as PietImage, ImageFormat, InterpolationMode,
-    IntoBrush, RenderContext, StrokeStyle,
+    IntoBrush, LineCap, LineJoin, RenderContext, StrokeStyle,
 };
 use ratatui_core::buffer::{Buffer, Cell};
 use ratatui_core::layout::Rect as TuiRect;
@@ -49,7 +52,7 @@ impl<'a> IntoBrush<TuiRenderContext<'a>> for TuiBrush {
 
 /// An image handle for the terminal backend.
 ///
-/// Image creation is not implemented in the phase 0-2 backend yet; this type
+/// Image creation is not implemented in the terminal backend yet; this type
 /// exists so the associated type is concrete and can be extended later.
 #[derive(Clone, Debug)]
 pub struct TuiImage {
@@ -240,13 +243,17 @@ impl<'a> TuiRenderContext<'a> {
         let brush = brush.make_brush(self, || bbox);
         let mut path = shape.into_path(0.1);
         path.apply_affine(self.state.transform);
+        self.fill_path(&path, &brush, even_odd);
+    }
 
+    fn fill_path(&mut self, path: &BezPath, brush: &TuiBrush, even_odd: bool) {
         let (col0, row0, col1, row1) = self.cell_range(path.bounding_box());
+
         for row in row0..row1 {
             for col in col0..col1 {
                 let point = self.cell_center(col, row);
                 let inside = if even_odd {
-                    even_odd_contains(&path, point)
+                    even_odd_contains(path, point)
                 } else {
                     path.winding(point) != 0
                 };
@@ -256,6 +263,38 @@ impl<'a> TuiRenderContext<'a> {
                 }
             }
         }
+    }
+
+    fn stroke_impl(
+        &mut self,
+        shape: impl Shape,
+        brush: &impl IntoBrush<Self>,
+        width: f64,
+        style: &StrokeStyle,
+    ) {
+        if !width.is_finite() || width <= 0.0 {
+            return;
+        }
+
+        let bbox = shape.bounding_box();
+        let brush = brush.make_brush(self, || bbox);
+        let path = shape.into_path(0.1);
+        if path.elements().is_empty() || !path.is_finite() {
+            return;
+        }
+
+        let mut outline = expand_stroke(
+            path.path_elements(0.1),
+            &kurbo_stroke(style, width),
+            &StrokeOpts::default(),
+            0.1,
+        );
+        if outline.elements().is_empty() || !outline.is_finite() {
+            return;
+        }
+
+        outline.apply_affine(self.state.transform);
+        self.fill_path(&outline, &brush, false);
     }
 
     fn write_text_cell(&mut self, col: usize, row: usize, symbol: &str, style: &TextStyle) -> bool {
@@ -308,18 +347,18 @@ impl RenderContext for TuiRenderContext<'_> {
         }
     }
 
-    fn stroke(&mut self, _shape: impl Shape, _brush: &impl IntoBrush<Self>, _width: f64) {
-        // Canvas strokes are implemented in the next phase.
+    fn stroke(&mut self, shape: impl Shape, brush: &impl IntoBrush<Self>, width: f64) {
+        self.stroke_impl(shape, brush, width, &StrokeStyle::default());
     }
 
     fn stroke_styled(
         &mut self,
-        _shape: impl Shape,
-        _brush: &impl IntoBrush<Self>,
-        _width: f64,
-        _style: &StrokeStyle,
+        shape: impl Shape,
+        brush: &impl IntoBrush<Self>,
+        width: f64,
+        style: &StrokeStyle,
     ) {
-        // Canvas strokes are implemented in the next phase.
+        self.stroke_impl(shape, brush, width, style);
     }
 
     fn fill(&mut self, shape: impl Shape, brush: &impl IntoBrush<Self>) {
@@ -510,6 +549,44 @@ fn modifiers_for(style: &TextStyle) -> Modifier {
     modifiers
 }
 
+fn kurbo_stroke(style: &StrokeStyle, width: f64) -> Stroke {
+    let join = match style.line_join {
+        LineJoin::Miter { .. } => KurboJoin::Miter,
+        LineJoin::Round => KurboJoin::Round,
+        LineJoin::Bevel => KurboJoin::Bevel,
+    };
+    let cap = match style.line_cap {
+        LineCap::Butt => KurboCap::Butt,
+        LineCap::Round => KurboCap::Round,
+        LineCap::Square => KurboCap::Square,
+    };
+
+    let mut stroke = Stroke::new(width).with_join(join).with_caps(cap);
+    if let Some(limit) = style.miter_limit()
+        && limit.is_finite()
+        && limit > 0.0
+    {
+        stroke = stroke.with_miter_limit(limit);
+    }
+
+    let dashes = style
+        .dash_pattern
+        .iter()
+        .copied()
+        .filter(|dash| dash.is_finite() && *dash >= 0.0)
+        .collect::<Vec<_>>();
+    if dashes.iter().any(|dash| *dash > 0.0) {
+        let offset = if style.dash_offset.is_finite() {
+            style.dash_offset
+        } else {
+            0.0
+        };
+        stroke = stroke.with_dashes(offset, dashes);
+    }
+
+    stroke
+}
+
 fn gradient_color(gradient: &FixedGradient, point: Point) -> Color {
     match gradient {
         FixedGradient::Linear(linear) => {
@@ -605,4 +682,36 @@ fn ray_crosses(a: Point, b: Point, point: Point) -> bool {
     }
     let x = a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y);
     point.x < x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_stroke_style_to_kurbo() {
+        let style = StrokeStyle::new()
+            .line_join(LineJoin::Miter { limit: 3.0 })
+            .line_cap(LineCap::Round)
+            .dash_pattern(&[2.0, 1.0])
+            .dash_offset(1.0);
+        let stroke = kurbo_stroke(&style, 4.0);
+
+        assert_eq!(stroke.width, 4.0);
+        assert_eq!(stroke.join, KurboJoin::Miter);
+        assert_eq!(stroke.miter_limit, 3.0);
+        assert_eq!(stroke.start_cap, KurboCap::Round);
+        assert_eq!(stroke.end_cap, KurboCap::Round);
+        assert_eq!(stroke.dash_pattern.as_slice(), &[2.0, 1.0]);
+        assert_eq!(stroke.dash_offset, 1.0);
+    }
+
+    #[test]
+    fn invalid_dash_pattern_falls_back_to_solid() {
+        let mut style = StrokeStyle::new();
+        style.set_dash_pattern([f64::NAN, -1.0, 0.0]);
+        let stroke = kurbo_stroke(&style, 1.0);
+
+        assert!(stroke.dash_pattern.is_empty());
+    }
 }

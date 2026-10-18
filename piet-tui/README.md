@@ -10,9 +10,10 @@ This crate is intentionally independent of `piet-common`: depending on
 dependencies.
 
 The current implementation covers text layout/rendering, `fill`, `fill_even_odd`,
-`clear`, clipping, and basic transform state. Text is rendered on the terminal
-cell grid; font family and font size are accepted by the Piet API but cannot be
-represented by a terminal. Canvas strokes and images are not implemented yet.
+`stroke`, `stroke_styled`, `clear`, clipping, and basic transform state. Text is
+rendered on the terminal cell grid; font family and font size are accepted by
+the Piet API but cannot be represented by a terminal. Images are not implemented
+yet.
 
 ## Why not a feature on `piet`?
 

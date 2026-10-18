@@ -14,9 +14,10 @@ mod native {
     use std::io;
     use std::time::Duration;
 
-    use piet::kurbo::{Point, Rect};
+    use piet::kurbo::{Line, Point, Rect};
     use piet::{
-        Color, FontStyle, FontWeight, RenderContext, Text as _, TextAttribute, TextLayoutBuilder,
+        Color, FontStyle, FontWeight, RenderContext, StrokeStyle, Text as _, TextAttribute,
+        TextLayoutBuilder,
     };
     use piet_tui::{TuiConfig, render_with};
     use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -77,6 +78,14 @@ mod native {
                 .build()
                 .unwrap();
             context.draw_text(&body, Point::new(1.0, 2.0));
+
+            let separator_style = StrokeStyle::new().dash_pattern(&[3.0, 2.0]);
+            context.stroke_styled(
+                Line::new((1.0, 4.5), (area.width.saturating_sub(1) as f64, 4.5)),
+                &Color::rgb8(90, 100, 150),
+                1.0,
+                &separator_style,
+            );
 
             let help = context
                 .text()

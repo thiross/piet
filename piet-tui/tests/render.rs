@@ -1,9 +1,10 @@
 // Copyright 2026 the Piet Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use piet::kurbo::{Affine, Point, Rect, Shape};
+use piet::kurbo::{Affine, Line, Point, Rect, Shape};
 use piet::{
-    Color, FontStyle, FontWeight, RenderContext, Text as _, TextAttribute, TextLayoutBuilder,
+    Color, FontStyle, FontWeight, LineCap, RenderContext, StrokeStyle, Text as _, TextAttribute,
+    TextLayoutBuilder,
 };
 use piet_tui::{TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
@@ -287,4 +288,140 @@ fn tab_cells_are_rendered_as_spaces() {
     assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
     assert_eq!(buffer.cell((3, 0)).unwrap().symbol(), " ");
     assert_eq!(buffer.cell((4, 0)).unwrap().symbol(), "b");
+}
+
+#[test]
+fn stroke_draws_horizontal_line_on_the_cell_grid() {
+    let mut buffer = empty_buffer(8, 3);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.stroke(
+            Line::new((0.0, 0.5), (4.0, 0.5)),
+            &Color::rgb8(10, 20, 30),
+            1.0,
+        );
+    }
+
+    for x in 0..4 {
+        assert_eq!(buffer.cell((x, 0)).unwrap().bg, TuiColor::Rgb(10, 20, 30));
+    }
+    assert_eq!(buffer.cell((4, 0)).unwrap().bg, TuiColor::Reset);
+    assert_eq!(buffer.cell((0, 1)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn wider_stroke_covers_multiple_rows() {
+    let mut buffer = empty_buffer(8, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.stroke(
+            Line::new((0.0, 1.0), (4.0, 1.0)),
+            &Color::rgb8(1, 2, 3),
+            2.0,
+        );
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((1, 1)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((1, 2)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn stroke_applies_the_current_transform() {
+    let mut buffer = empty_buffer(8, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.transform(Affine::translate((1.0, 1.0)));
+        context.stroke(
+            Line::new((0.0, 0.5), (2.0, 0.5)),
+            &Color::rgb8(1, 2, 3),
+            1.0,
+        );
+    }
+
+    assert_eq!(buffer.cell((2, 1)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((0, 1)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn stroke_respects_clip() {
+    let mut buffer = empty_buffer(8, 3);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.clip(Rect::new(0.0, 0.0, 2.0, 1.0));
+        context.stroke(
+            Line::new((0.0, 0.5), (5.0, 0.5)),
+            &Color::rgb8(1, 2, 3),
+            1.0,
+        );
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn stroke_styled_square_caps_extend_the_endpoints() {
+    let mut buffer = empty_buffer(8, 3);
+    let style = StrokeStyle::new().line_cap(LineCap::Square);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.stroke_styled(
+            Line::new((0.75, 0.5), (3.25, 0.5)),
+            &Color::rgb8(1, 2, 3),
+            1.0,
+            &style,
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((3, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+}
+
+#[test]
+fn stroke_styled_dashes_leave_gaps() {
+    let mut buffer = empty_buffer(10, 3);
+    let style = StrokeStyle::new().dash_pattern(&[2.0, 2.0]);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.stroke_styled(
+            Line::new((0.0, 0.5), (8.0, 0.5)),
+            &Color::rgb8(1, 2, 3),
+            1.0,
+            &style,
+        );
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Reset);
+    assert_eq!(buffer.cell((4, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((6, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn closed_shape_stroke_does_not_fill_the_interior() {
+    let mut buffer = empty_buffer(8, 6);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.stroke(Rect::new(0.0, 0.0, 5.0, 4.0), &Color::rgb8(1, 2, 3), 2.0);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((4, 3)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 2)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn non_positive_stroke_width_draws_nothing() {
+    let mut buffer = empty_buffer(8, 3);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let line = Line::new((0.0, 0.5), (5.0, 0.5));
+        context.stroke(line, &Color::rgb8(1, 2, 3), 0.0);
+        context.stroke(line, &Color::rgb8(1, 2, 3), -1.0);
+    }
+
+    for x in 0..5 {
+        assert_eq!(buffer.cell((x, 0)).unwrap().bg, TuiColor::Reset);
+    }
 }
