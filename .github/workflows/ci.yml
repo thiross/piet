@@ -11,7 +11,7 @@ env:
   RUST_MIN_VER: "1.92"
   # List of packages that will be checked with the minimum supported Rust version.
   # This should be limited to packages that are intended for publishing.
-  RUST_MIN_VER_PKGS: "-p piet -p piet-common -p piet-cairo -p piet-coregraphics -p piet-direct2d -p piet-svg -p piet-web"
+  RUST_MIN_VER_PKGS: "-p piet -p piet-tui -p piet-common -p piet-cairo -p piet-coregraphics -p piet-direct2d -p piet-svg -p piet-web"
   # List of packages that can not target a specific platform.
   EXCLUDE_PKGS: |
     {

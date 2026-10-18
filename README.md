@@ -78,6 +78,13 @@ which should produce an image called `d2d-test-00-2.00.png`.
 #### `piet-svg` [![crates.io](https://img.shields.io/crates/v/piet-svg)](https://crates.io/crates/piet-svg)
 #### `piet-web` [![crates.io](https://img.shields.io/crates/v/piet-web)](https://crates.io/crates/piet-web)
 
+#### `piet-tui`
+
+Terminal backend that renders into a ratatui `Buffer`. It depends only on
+`piet` and `ratatui-core`, so using it directly does not pull in Cairo,
+CoreGraphics, Direct2D, or web dependencies. Terminal I/O can be provided by
+`ratatui-crossterm` or any other ratatui backend.
+
 ## Minimum supported Rust Version (MSRV)
 
 This version of Piet has been verified to compile with **Rust 1.92** and later.

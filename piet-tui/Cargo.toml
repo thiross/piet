@@ -1,0 +1,22 @@
+[package]
+name = "piet-tui"
+version.workspace = true
+description = "Ratatui/crossterm terminal backend for Piet."
+categories = ["rendering::graphics-api", "command-line-interface"]
+keywords = ["graphics", "2d", "tui", "ratatui"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[dependencies]
+piet = { workspace = true }
+ratatui-core = { version = "0.1.2", features = ["std"] }
+unicode-segmentation = "1.12.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+
+[dev-dependencies]
+static_assertions = "1.1.0"
