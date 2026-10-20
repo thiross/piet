@@ -204,3 +204,74 @@ fn rects_for_range_spans_lines() {
         vec![Rect::new(0.0, 0.0, 2.0, 1.0), Rect::new(0.0, 1.0, 2.0, 2.0)]
     );
 }
+
+#[test]
+fn layout_origin_snaps_to_cell_grid() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context =
+        TuiRenderContext::new(&mut buffer, TuiConfig::with_cell_size(Size::new(8.0, 16.0)));
+    let layout = context.text().new_text_layout("hello").build().unwrap();
+
+    assert_eq!(
+        layout.layout_origin(Point::new(4.0, 8.0)),
+        Point::new(8.0, 16.0)
+    );
+    assert_eq!(
+        layout.layout_origin(Point::new(-4.0, -8.0)),
+        Point::new(-8.0, -16.0)
+    );
+}
+
+#[test]
+fn layout_origin_in_cell_units() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::cells());
+    let layout = context.text().new_text_layout("hello").build().unwrap();
+
+    assert_eq!(
+        layout.layout_origin(Point::new(4.25, 8.75)),
+        Point::new(4.0, 9.0)
+    );
+}
+
+#[test]
+fn layout_origin_is_stable_for_multiline_wide_and_cjk_text() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context =
+        TuiRenderContext::new(&mut buffer, TuiConfig::with_cell_size(Size::new(8.0, 16.0)));
+    let layout = context
+        .text()
+        .new_text_layout("你好\nwide")
+        .build()
+        .unwrap();
+    let reference = context.text().new_text_layout("hello").build().unwrap();
+    let requested = Point::new(12.0, 28.0);
+
+    assert_eq!(layout.line_count(), 2);
+    assert_eq!(layout.layout_origin(requested), Point::new(16.0, 32.0));
+    assert_eq!(
+        layout.layout_origin(requested),
+        reference.layout_origin(requested)
+    );
+    assert_eq!(
+        layout.rects_for_range(0..3),
+        vec![Rect::new(0.0, 0.0, 16.0, 16.0)]
+    );
+}
+
+#[test]
+fn hit_testing_uses_actual_draw_origin_with_half_cell_offset() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context =
+        TuiRenderContext::new(&mut buffer, TuiConfig::with_cell_size(Size::new(8.0, 16.0)));
+    let layout = context.text().new_text_layout("hello").build().unwrap();
+
+    let requested = Point::new(4.0, 8.0);
+    let draw_origin = layout.layout_origin(requested);
+    let pointer_at_drawn_cell_center = draw_origin + (4.0, 8.0);
+    let layout_point = pointer_at_drawn_cell_center - draw_origin.to_vec2();
+    let hit = layout.hit_test_point(layout_point);
+
+    assert_eq!(hit.idx, 0);
+    assert!(hit.is_inside);
+}

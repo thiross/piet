@@ -221,6 +221,17 @@ impl TuiTextLayout {
     }
 }
 
+/// Convert a requested drawing origin to the nearest terminal cell origin.
+///
+/// This is the single source of truth shared by [`TextLayout::layout_origin`]
+/// and `draw_text`.
+pub(crate) fn origin_cell(config: &TuiConfig, origin: Point) -> (isize, isize) {
+    (
+        (origin.x / config.cell_width()).round() as isize,
+        (origin.y / config.cell_height()).round() as isize,
+    )
+}
+
 impl std::fmt::Debug for TuiTextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TuiTextLayout")
@@ -234,6 +245,14 @@ impl std::fmt::Debug for TuiTextLayout {
 impl TextLayout for TuiTextLayout {
     fn size(&self) -> Size {
         self.data.size
+    }
+
+    fn layout_origin(&self, requested: Point) -> Point {
+        let (col, row) = origin_cell(&self.data.config, requested);
+        Point::new(
+            col as f64 * self.data.config.cell_width(),
+            row as f64 * self.data.config.cell_height(),
+        )
     }
 
     fn trailing_whitespace_width(&self) -> f64 {

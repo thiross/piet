@@ -47,6 +47,34 @@ origin. Terminal cells cannot scale, rotate, or shear glyphs, so those parts of
 the transform are ignored for text. Canvas fills, strokes, clips, and images
 support the full affine transform.
 
+Terminal text origins are snapped to the cell grid. `TextLayout::layout_origin`
+returns the cell-aligned origin that `draw_text` will use:
+
+```rust
+let requested = Point::new(4.0, 8.0);
+let draw_origin = layout.layout_origin(requested);
+// With 8x16 cells, draw_origin is Point::new(8.0, 16.0).
+```
+
+The layout's hit-test methods and `TextLayout::rects_for_range` continue to use
+layout coordinates relative to the requested origin. A widget that draws text at
+`requested` should translate hit-test points into layout coordinates and
+translate selection rectangles by `draw_origin - requested` before painting
+them:
+
+```rust
+let requested = layout_rect.origin();
+let draw_origin = layout.layout_origin(requested);
+let layout_point = pointer - draw_origin.to_vec2();
+let hit = layout.hit_test_point(layout_point);
+for rect in layout.rects_for_range(selection.clone()) {
+    context.fill(rect + draw_origin.to_vec2(), &selection_color);
+}
+```
+
+Apply any active render transform to `requested` before calling
+`layout_origin`; the method only describes the terminal's origin quantization.
+
 For terminal-specific UI primitives, `TuiCellExt` provides low-level cell
 drawing without adding widget semantics to Piet:
 

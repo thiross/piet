@@ -173,7 +173,7 @@ impl<'a> BitmapTarget<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use piet::kurbo::{Point, Rect as KurboRect};
+    use piet::kurbo::{Point, Rect as KurboRect, Size};
     use piet::{Color, Error, RenderContext, Text as _, TextLayoutBuilder};
     use ratatui_core::style::Color as TuiColor;
 
@@ -213,6 +213,22 @@ mod test {
 
         assert_eq!(target.buffer().cell((1, 0)).unwrap().symbol(), "x");
         assert_eq!(target.into_buffer().area, Rect::new(0, 0, 4, 1));
+    }
+
+    #[test]
+    fn text_layout_origin_uses_cell_grid() {
+        use piet::TextLayout as _;
+
+        let mut device =
+            Device::with_config(TuiConfig::with_cell_size(Size::new(8.0, 16.0))).unwrap();
+        let mut target = device.bitmap_target(20, 4, 1.0).unwrap();
+        let mut context = target.render_context();
+        let layout = context.text().new_text_layout("hello").build().unwrap();
+
+        assert_eq!(
+            layout.layout_origin(Point::new(4.0, 8.0)),
+            Point::new(8.0, 16.0)
+        );
     }
 
     #[test]

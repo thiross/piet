@@ -109,6 +109,17 @@ fn empty_layout() {
 }
 
 #[test]
+#[cfg(not(feature = "tui"))]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+fn layout_origin_is_identity_for_gui() {
+    let mut factory = make_factory();
+    let layout = factory.new_text_layout("hello").build().unwrap();
+    let requested = Point::new(3.25, 7.5);
+
+    assert_eq!(layout.layout_origin(requested), requested);
+}
+
+#[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn ws_only_layout() {
     let mut factory = make_factory();

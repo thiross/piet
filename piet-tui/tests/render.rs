@@ -1,7 +1,7 @@
 // Copyright 2026 the Piet Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use piet::kurbo::{Affine, Circle, Line, Point, Rect, Shape};
+use piet::kurbo::{Affine, Circle, Line, Point, Rect, Shape, Size};
 use piet::{
     Color, Error, FixedGradient, FixedRadialGradient, FontStyle, FontWeight, GradientStop,
     ImageFormat, InterpolationMode, LineCap, LinearGradient, RenderContext, StrokeStyle, Text as _,
@@ -137,6 +137,20 @@ fn translation_moves_text_origin() {
 
     assert_eq!(buffer.cell((2, 1)).unwrap().symbol(), "h");
     assert_eq!(buffer.cell((3, 1)).unwrap().symbol(), "i");
+}
+
+#[test]
+fn text_origin_snaps_to_cell_grid() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context =
+            TuiRenderContext::new(&mut buffer, TuiConfig::with_cell_size(Size::new(8.0, 16.0)));
+        let layout = context.text().new_text_layout("hi").build().unwrap();
+        context.draw_text(&layout, Point::new(4.0, 8.0));
+    }
+
+    assert_eq!(buffer.cell((1, 1)).unwrap().symbol(), "h");
+    assert_eq!(buffer.cell((2, 1)).unwrap().symbol(), "i");
 }
 
 #[test]

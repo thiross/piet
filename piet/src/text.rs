@@ -323,6 +323,29 @@ pub trait TextLayout: Clone {
     /// behaviour, but it is out of scope for the time being.
     fn size(&self) -> Size;
 
+    /// Returns the origin at which this layout's glyphs will actually be drawn
+    /// for a requested origin.
+    ///
+    /// `requested` is the origin that would be passed to
+    /// [`crate::RenderContext::draw_text`], after any active render transform
+    /// has been applied. Most backends draw glyphs exactly at that point, so the
+    /// default implementation returns `requested` unchanged.
+    ///
+    /// A backend that quantizes text to a device grid should override this
+    /// method. UI frameworks can then use the result to translate rectangles
+    /// returned by [`TextLayout::rects_for_range`] and points returned by
+    /// [`TextLayout::hit_test_point`] and
+    /// [`TextLayout::hit_test_text_position`] into the same coordinate space as
+    /// the glyphs that were actually drawn.
+    ///
+    /// This method only describes origin quantization. It does not include a
+    /// render-context transform, and it does not change the coordinate space of
+    /// the hit-testing methods or [`TextLayout::rects_for_range`].
+    #[must_use]
+    fn layout_origin(&self, requested: Point) -> Point {
+        requested
+    }
+
     /// The width of this layout, including the width of any trailing whitespace.
     ///
     /// In many situations you do not want to include the width of trailing
@@ -606,5 +629,17 @@ impl TextStorage for std::rc::Rc<String> {
 impl TextStorage for &'static str {
     fn as_str(&self) -> &str {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::null_renderer::NullTextLayout;
+
+    #[test]
+    fn layout_origin_defaults_to_requested() {
+        let requested = Point::new(3.25, 7.5);
+        assert_eq!(NullTextLayout.layout_origin(requested), requested);
     }
 }

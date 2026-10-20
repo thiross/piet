@@ -23,7 +23,7 @@ use crate::color::blend_over;
 use crate::config::TuiConfig;
 #[cfg(feature = "big-text")]
 use crate::text::LayoutData;
-use crate::text::{TextStyle, TuiText, TuiTextLayout};
+use crate::text::{TextStyle, TuiText, TuiTextLayout, origin_cell};
 
 /// A brush for the terminal backend.
 #[derive(Clone, Debug)]
@@ -602,9 +602,7 @@ impl RenderContext for TuiRenderContext<'_> {
     fn draw_text(&mut self, layout: &Self::TextLayout, pos: impl Into<Point>) {
         let origin = self.state.transform * pos.into();
         let cell_width = self.config.cell_width();
-        let cell_height = self.config.cell_height();
-        let origin_col = (origin.x / cell_width).round() as isize;
-        let origin_row = (origin.y / cell_height).round() as isize;
+        let (origin_col, origin_row) = origin_cell(&self.config, origin);
 
         let data = layout.data();
         #[cfg(feature = "big-text")]
