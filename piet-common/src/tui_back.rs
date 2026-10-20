@@ -174,7 +174,9 @@ impl<'a> BitmapTarget<'a> {
 mod test {
     use super::*;
     use piet::kurbo::{Point, Rect as KurboRect, Size};
-    use piet::{Color, Error, RenderContext, Text as _, TextLayoutBuilder};
+    use piet::{
+        AnsiColor, Color, Error, RenderContext, Text as _, TextAttribute, TextLayoutBuilder,
+    };
     use ratatui_core::style::Color as TuiColor;
 
     #[test]
@@ -198,6 +200,40 @@ mod test {
         assert_eq!(
             target.buffer().cell((0, 2)).unwrap().bg,
             TuiColor::Rgb(4, 5, 6)
+        );
+    }
+
+    #[test]
+    fn indexed_colors_survive_common_backend_paths() {
+        let mut device = Device::new().unwrap();
+        let mut target = device.bitmap_target(4, 2, 1.0).unwrap();
+
+        {
+            let mut context = target.render_context();
+            context.clear(None, Color::ansi(AnsiColor::Blue));
+            context.fill(
+                KurboRect::new(0.0, 0.0, 2.0, 1.0),
+                &Color::ansi(AnsiColor::Green),
+            );
+            let layout = context
+                .text()
+                .new_text_layout("A")
+                .range_attribute(
+                    0..1,
+                    TextAttribute::TextColor(Color::ansi(AnsiColor::Yellow)),
+                )
+                .build()
+                .unwrap();
+            context.draw_text(&layout, Point::ZERO);
+            context.finish().unwrap();
+        }
+
+        let cell = target.buffer().cell((0, 0)).unwrap();
+        assert_eq!(cell.fg, TuiColor::Indexed(3));
+        assert_eq!(cell.bg, TuiColor::Indexed(2));
+        assert_eq!(
+            target.buffer().cell((2, 0)).unwrap().bg,
+            TuiColor::Indexed(4)
         );
     }
 

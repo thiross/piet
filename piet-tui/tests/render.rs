@@ -3,9 +3,9 @@
 
 use piet::kurbo::{Affine, Circle, Line, Point, Rect, Shape, Size};
 use piet::{
-    Color, Error, FixedGradient, FixedRadialGradient, FontStyle, FontWeight, GradientStop,
-    ImageFormat, InterpolationMode, LineCap, LinearGradient, RenderContext, StrokeStyle, Text as _,
-    TextAttribute, TextLayoutBuilder, UnitPoint,
+    AnsiColor, Color, Error, FixedGradient, FixedRadialGradient, FontStyle, FontWeight,
+    GradientStop, ImageFormat, InterpolationMode, LineCap, LinearGradient, RenderContext,
+    StrokeStyle, Text as _, TextAttribute, TextLayoutBuilder, UnitPoint,
 };
 use piet_tui::{TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
@@ -37,6 +37,29 @@ fn draws_text_with_color_weight_and_background() {
     assert_eq!(cell.fg, TuiColor::Rgb(255, 0, 0));
     assert_eq!(cell.bg, TuiColor::Rgb(10, 20, 30));
     assert!(cell.modifier.contains(Modifier::BOLD));
+}
+
+#[test]
+fn draws_text_with_indexed_colors() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("ANSI")
+            .range_attribute(
+                0..4,
+                TextAttribute::TextColor(Color::ansi(AnsiColor::Yellow)),
+            )
+            .background_color(0..4, Color::indexed(196))
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    let cell = buffer.cell((0, 0)).unwrap();
+    assert_eq!(cell.fg, TuiColor::Indexed(3));
+    assert_eq!(cell.bg, TuiColor::Indexed(196));
 }
 
 #[test]
@@ -267,6 +290,22 @@ fn clear_replaces_region() {
 
     assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(9, 8, 7));
     assert_eq!(buffer.cell((3, 1)).unwrap().bg, TuiColor::Rgb(9, 8, 7));
+}
+
+#[test]
+fn clear_and_fill_preserve_indexed_colors() {
+    let mut buffer = empty_buffer(4, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.clear(None, Color::ansi(AnsiColor::Blue));
+        context.fill(
+            Rect::new(0.0, 0.0, 2.0, 1.0),
+            &Color::ansi(AnsiColor::Green),
+        );
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Indexed(2));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Indexed(4));
 }
 
 #[test]

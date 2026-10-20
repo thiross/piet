@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use piet::kurbo::{Affine, Rect};
-use piet::{Color, RenderContext};
+use piet::{AnsiColor, Color, RenderContext};
 use piet_tui::{TuiCellExt, TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect as TuiRect;
@@ -24,6 +24,25 @@ fn set_cell_sets_symbol_and_colors() {
     assert_eq!(cell.symbol(), "┌");
     assert_eq!(cell.fg, TuiColor::Rgb(10, 20, 30));
     assert_eq!(cell.bg, TuiColor::Rgb(40, 50, 60));
+}
+
+#[test]
+fn set_cell_preserves_indexed_colors() {
+    let mut buffer = empty_buffer(4, 2);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        context.set_cell(
+            0,
+            0,
+            "x",
+            Color::ansi(AnsiColor::Yellow),
+            Color::indexed(196),
+        );
+    }
+
+    let cell = buffer.cell((0, 0)).unwrap();
+    assert_eq!(cell.fg, TuiColor::Indexed(3));
+    assert_eq!(cell.bg, TuiColor::Indexed(196));
 }
 
 #[test]

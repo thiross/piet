@@ -13,6 +13,11 @@
 //! underline, strikethrough, wrapping, and alignment. Font family and font size
 //! are accepted for API compatibility but are not rendered differently.
 //!
+//! Terminal theme colors can be requested with [`piet::Color::ansi`] or
+//! [`piet::Color::indexed`]. Opaque indexed colors remain
+//! [`ratatui_core::style::Color::Indexed`] in the output buffer instead of being
+//! converted to fixed RGB values.
+//!
 //! Images support grayscale, RGB, separate-alpha RGBA, and premultiplied RGBA
 //! buffers, with nearest-neighbor or bilinear sampling. Because a terminal cell
 //! has only foreground and background colors, each cell renders two vertical

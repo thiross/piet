@@ -14,6 +14,12 @@ The current implementation covers text layout/rendering, `fill`, `fill_even_odd`
 Text is rendered on the terminal cell grid; font family and font size are
 accepted by the Piet API but cannot be represented by a terminal.
 
+Use `Color::ansi` for one of the 16 terminal-theme slots or `Color::indexed` for
+the full xterm 0–255 palette. Opaque indexed colors remain
+`ratatui_core::style::Color::Indexed` in the buffer, allowing the terminal theme
+to control their RGB values. Other backends and alpha blending use a
+deterministic xterm RGB fallback.
+
 Images support grayscale, RGB, separate-alpha RGBA, and premultiplied RGBA
 formats. Sampling can be nearest-neighbor or bilinear, and `draw_image_area`
 supports source cropping with scaling. Each terminal cell has only a foreground

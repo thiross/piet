@@ -5,16 +5,90 @@
 
 use std::fmt::{Debug, Formatter};
 
+/// One of the 16 standard ANSI terminal palette slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum AnsiColor {
+    /// ANSI palette slot 0.
+    Black = 0,
+    /// ANSI palette slot 1.
+    Red = 1,
+    /// ANSI palette slot 2.
+    Green = 2,
+    /// ANSI palette slot 3.
+    Yellow = 3,
+    /// ANSI palette slot 4.
+    Blue = 4,
+    /// ANSI palette slot 5.
+    Magenta = 5,
+    /// ANSI palette slot 6.
+    Cyan = 6,
+    /// ANSI palette slot 7.
+    White = 7,
+    /// ANSI palette slot 8.
+    BrightBlack = 8,
+    /// ANSI palette slot 9.
+    BrightRed = 9,
+    /// ANSI palette slot 10.
+    BrightGreen = 10,
+    /// ANSI palette slot 11.
+    BrightYellow = 11,
+    /// ANSI palette slot 12.
+    BrightBlue = 12,
+    /// ANSI palette slot 13.
+    BrightMagenta = 13,
+    /// ANSI palette slot 14.
+    BrightCyan = 14,
+    /// ANSI palette slot 15.
+    BrightWhite = 15,
+}
+
+impl AnsiColor {
+    /// Return the ANSI palette index for this color.
+    pub const fn index(self) -> u8 {
+        self as u8
+    }
+
+    /// Return the ANSI color for `index` if it is in the range 0 through 15.
+    pub const fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::Black),
+            1 => Some(Self::Red),
+            2 => Some(Self::Green),
+            3 => Some(Self::Yellow),
+            4 => Some(Self::Blue),
+            5 => Some(Self::Magenta),
+            6 => Some(Self::Cyan),
+            7 => Some(Self::White),
+            8 => Some(Self::BrightBlack),
+            9 => Some(Self::BrightRed),
+            10 => Some(Self::BrightGreen),
+            11 => Some(Self::BrightYellow),
+            12 => Some(Self::BrightBlue),
+            13 => Some(Self::BrightMagenta),
+            14 => Some(Self::BrightCyan),
+            15 => Some(Self::BrightWhite),
+            _ => None,
+        }
+    }
+}
+
 /// A datatype representing color.
 ///
-/// Currently this is only a 32 bit RGBA value, but it will likely
-/// extend to some form of wide-gamut colorspace, and in the meantime
-/// is useful for giving programs proper type.
+/// Colors are either 32-bit RGBA values or terminal palette indices. Indexed
+/// colors retain their palette identity in backends that support it; other
+/// backends use a deterministic xterm RGB fallback.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Color {
     #[doc(hidden)]
     Rgba32(u32),
+
+    /// A terminal palette index.
+    ///
+    /// Indices 0 through 15 normally come from the terminal theme. Indices 16
+    /// through 255 use the conventional xterm palette.
+    Indexed(u8),
 }
 
 /// Errors that can occur when parsing a hex color.
@@ -44,6 +118,16 @@ impl Color {
     /// Create a color from a 32-bit rgba value (alpha as least significant byte).
     pub const fn from_rgba32_u32(rgba: u32) -> Color {
         Color::Rgba32(rgba)
+    }
+
+    /// Create a color from one of the 16 standard ANSI terminal palette slots.
+    pub const fn ansi(color: AnsiColor) -> Color {
+        Color::Indexed(color.index())
+    }
+
+    /// Create a color from a raw terminal palette index.
+    pub const fn indexed(index: u8) -> Color {
+        Color::Indexed(index)
     }
 
     /// Attempt to create a color from a CSS-style hex string.
@@ -187,7 +271,10 @@ impl Color {
     /// The `a` value represents alpha in the range 0.0 to 1.0.
     pub fn with_alpha(self, a: f64) -> Color {
         let a = (a.clamp(0.0, 1.0) * 255.0).round() as u32;
-        Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a)
+        match self {
+            Color::Indexed(index) if a == 0xff => Color::Indexed(index),
+            _ => Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a),
+        }
     }
 
     /// Change just the red value of a color.
@@ -215,13 +302,35 @@ impl Color {
     ///
     /// The `a` value represents alpha as a `u8` from 0 to 255.
     pub const fn with_a8(self, a: u8) -> Color {
-        Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a as u32)
+        match self {
+            Color::Indexed(index) if a == 0xff => Color::Indexed(index),
+            _ => Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a as u32),
+        }
     }
 
     /// Convert a color value to a 32-bit rgba value.
+    ///
+    /// Indexed colors use the conventional xterm RGB value as a fallback.
     pub const fn as_rgba_u32(self) -> u32 {
         match self {
             Color::Rgba32(rgba) => rgba,
+            Color::Indexed(index) => indexed_rgba_u32(index),
+        }
+    }
+
+    /// Return the terminal palette index, if this is an indexed color.
+    pub const fn as_indexed(self) -> Option<u8> {
+        match self {
+            Color::Indexed(index) => Some(index),
+            Color::Rgba32(_) => None,
+        }
+    }
+
+    /// Return the ANSI palette slot for indices 0 through 15.
+    pub const fn as_ansi(self) -> Option<AnsiColor> {
+        match self {
+            Color::Indexed(index) => AnsiColor::from_index(index),
+            Color::Rgba32(_) => None,
         }
     }
 
@@ -301,6 +410,32 @@ impl Color {
     pub const YELLOW: Color = Color::rgb8(255, 255, 0);
 }
 
+const ANSI_RGB: [u32; 16] = [
+    0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xc0c0c0, 0x808080,
+    0xff0000, 0x00ff00, 0xffff00, 0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
+];
+
+const XTERM_LEVELS: [u32; 6] = [0, 95, 135, 175, 215, 255];
+
+const fn indexed_rgba_u32(index: u8) -> u32 {
+    let (r, g, b) = if index < 16 {
+        let rgb = ANSI_RGB[index as usize];
+        ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+    } else if index < 232 {
+        let cube = (index - 16) as usize;
+        (
+            XTERM_LEVELS[cube / 36] as u8,
+            XTERM_LEVELS[(cube % 36) / 6] as u8,
+            XTERM_LEVELS[cube % 6] as u8,
+        )
+    } else {
+        let grey = 8 + 10 * (index - 232);
+        (grey, grey, grey)
+    };
+
+    ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xff
+}
+
 const fn get_4bit_hex_channels(hex_str: &str) -> Result<[u8; 8], ColorParseError> {
     let mut four_bit_channels = match hex_str.as_bytes() {
         &[b'#', r, g, b] | &[r, g, b] => [r, r, g, g, b, b, b'f', b'f'],
@@ -345,7 +480,10 @@ const fn hex_from_ascii_byte(b: u8) -> Result<u8, u8> {
 
 impl Debug for Color {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "#{:08x}", self.as_rgba_u32())
+        match self {
+            Color::Rgba32(_) => write!(f, "#{:08x}", self.as_rgba_u32()),
+            Color::Indexed(index) => write!(f, "Indexed({index})"),
+        }
     }
 }
 
@@ -395,5 +533,40 @@ mod tests {
         assert_eq!(color.with_g8(0xff), Color::from_rgba32_u32(0x11ff22bb));
         assert_eq!(color.with_b8(0xff), Color::from_rgba32_u32(0x11aaffbb));
         assert_eq!(color.with_a8(0xff), Color::from_rgba32_u32(0x11aa22ff));
+    }
+
+    #[test]
+    fn ansi_colors_preserve_palette_indices() {
+        assert_eq!(Color::ansi(AnsiColor::Yellow).as_indexed(), Some(3));
+        assert_eq!(
+            Color::ansi(AnsiColor::Yellow).as_ansi(),
+            Some(AnsiColor::Yellow)
+        );
+        assert_eq!(Color::indexed(196).as_indexed(), Some(196));
+        assert_eq!(Color::indexed(196).as_ansi(), None);
+        assert_eq!(Color::YELLOW.as_indexed(), None);
+        assert_eq!(AnsiColor::from_index(16), None);
+    }
+
+    #[test]
+    fn indexed_colors_use_xterm_rgb_fallbacks() {
+        assert_eq!(
+            Color::ansi(AnsiColor::Yellow).as_rgba8(),
+            (0x80, 0x80, 0x00, 0xff)
+        );
+        assert_eq!(Color::indexed(196).as_rgba8(), (0xff, 0x00, 0x00, 0xff));
+        assert_eq!(Color::indexed(232).as_rgba8(), (8, 8, 8, 0xff));
+        assert_eq!(Color::indexed(255).as_rgba8(), (238, 238, 238, 0xff));
+    }
+
+    #[test]
+    fn opaque_alpha_operations_preserve_indexed_colors() {
+        let green = Color::ansi(AnsiColor::Green);
+        assert_eq!(green.with_alpha(1.0), green);
+        assert_eq!(green.with_a8(0xff), green);
+
+        let translucent = green.with_alpha(0.5);
+        assert_eq!(translucent.as_indexed(), None);
+        assert_eq!(translucent.as_rgba8(), (0, 0x80, 0, 0x80));
     }
 }
