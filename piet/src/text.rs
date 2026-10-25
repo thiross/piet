@@ -413,10 +413,48 @@ pub trait TextLayout: Clone {
     /// boundary. If it is a character boundary but *not* a grapheme boundary,
     /// the return value may be backend-specific.
     ///
+    /// For a position shared by two visual lines, this method uses upstream
+    /// affinity. Use [`TextLayout::hit_test_text_position_with_affinity`] when
+    /// the visual line matters.
+    ///
     /// ## Panics:
     ///
     /// This method will panic if the text position is not a character boundary,
     fn hit_test_text_position(&self, idx: usize) -> HitTestPosition;
+
+    /// Given a grapheme boundary in the string used to create this
+    /// [`TextLayout`], return its location on the visual line selected by
+    /// `affinity`.
+    ///
+    /// A text position can be shared by two visual lines when soft wrapping
+    /// splits a word or preserves whitespace at the end of a line.
+    /// [`TextAffinity::Upstream`] selects the earlier line, while
+    /// [`TextAffinity::Downstream`] selects the later line. This makes caret
+    /// placement and selection geometry deterministic at soft-wrap boundaries.
+    ///
+    /// For more on text positions, see docs for the [`TextLayout`] trait.
+    ///
+    /// ## Notes:
+    ///
+    /// The user is expected to ensure that the provided index is a grapheme
+    /// boundary. If it is a character boundary but *not* a grapheme boundary,
+    /// the return value may be backend-specific.
+    ///
+    /// The default implementation delegates to
+    /// [`TextLayout::hit_test_text_position`] and therefore returns the same
+    /// position for both affinities. Backends that can distinguish visual lines
+    /// should override this method.
+    ///
+    /// ## Panics:
+    ///
+    /// This method will panic if the text position is not a character boundary.
+    fn hit_test_text_position_with_affinity(
+        &self,
+        idx: usize,
+        _affinity: TextAffinity,
+    ) -> HitTestPosition {
+        self.hit_test_text_position(idx)
+    }
 
     /// Returns a vector of `Rect`s that cover the region of the text indicated
     /// by `range`.
@@ -438,8 +476,12 @@ pub trait TextLayout: Clone {
             return Vec::new();
         }
 
-        let first_line = self.hit_test_text_position(range.start).line;
-        let last_line = self.hit_test_text_position(range.end).line;
+        let first_line = self
+            .hit_test_text_position_with_affinity(range.start, TextAffinity::Downstream)
+            .line;
+        let last_line = self
+            .hit_test_text_position_with_affinity(range.end, TextAffinity::Upstream)
+            .line;
 
         let mut result = Vec::new();
 
@@ -459,19 +501,37 @@ pub trait TextLayout: Clone {
                 metrics.end_offset - metrics.trailing_whitespace
             };
 
-            let start_x = self.hit_test_text_position(line_range_start).point.x;
-            //HACK: because we don't have affinity, if the line has an emergency
-            //break we need to manually use the layout width as the end point
-            //for the selection rect. See https://github.com/linebender/piet/issues/323
+            let start_x = self
+                .hit_test_text_position_with_affinity(line_range_start, TextAffinity::Downstream)
+                .point
+                .x;
+            // HACK: for backends that do not distinguish affinity, if the line
+            // has an emergency break we need to manually use the layout width as
+            // the end point for the selection rect.
+            // See https://github.com/linebender/piet/issues/323
             let end_x = if line != last_line && metrics.trailing_whitespace == 0 {
                 self.size().width
             } else {
-                self.hit_test_text_position(line_range_end).point.x
+                self.hit_test_text_position_with_affinity(line_range_end, TextAffinity::Upstream)
+                    .point
+                    .x
             };
             result.push(Rect::new(start_x, y0, end_x, y1));
         }
         result
     }
+}
+
+/// The visual line to prefer when a text position lies on a soft-wrap boundary.
+///
+/// A soft-wrap boundary belongs both to the end of the preceding visual line
+/// and to the start of the following visual line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAffinity {
+    /// The end of the preceding visual line.
+    Upstream,
+    /// The start of the following visual line.
+    Downstream,
 }
 
 /// Metadata about each line in a text layout.
@@ -637,9 +697,90 @@ mod tests {
     use super::*;
     use crate::null_renderer::NullTextLayout;
 
+    #[derive(Clone)]
+    struct AffinityTextLayout;
+
+    impl TextLayout for AffinityTextLayout {
+        fn size(&self) -> Size {
+            Size::new(5.0, 2.0)
+        }
+
+        fn trailing_whitespace_width(&self) -> f64 {
+            5.0
+        }
+
+        fn image_bounds(&self) -> Rect {
+            Rect::new(0.0, 0.0, 5.0, 2.0)
+        }
+
+        fn text(&self) -> &str {
+            "ab cd"
+        }
+
+        fn line_text(&self, line_number: usize) -> Option<&str> {
+            ["ab ", "cd"].get(line_number).copied()
+        }
+
+        fn line_metric(&self, line_number: usize) -> Option<LineMetric> {
+            match line_number {
+                0 => Some(LineMetric {
+                    start_offset: 0,
+                    end_offset: 3,
+                    trailing_whitespace: 1,
+                    baseline: 0.8,
+                    height: 1.0,
+                    y_offset: 0.0,
+                }),
+                1 => Some(LineMetric {
+                    start_offset: 3,
+                    end_offset: 5,
+                    trailing_whitespace: 0,
+                    baseline: 1.8,
+                    height: 1.0,
+                    y_offset: 1.0,
+                }),
+                _ => None,
+            }
+        }
+
+        fn line_count(&self) -> usize {
+            2
+        }
+
+        fn hit_test_point(&self, _point: Point) -> HitTestPoint {
+            HitTestPoint::default()
+        }
+
+        fn hit_test_text_position(&self, idx: usize) -> HitTestPosition {
+            self.hit_test_text_position_with_affinity(idx, TextAffinity::Upstream)
+        }
+
+        fn hit_test_text_position_with_affinity(
+            &self,
+            idx: usize,
+            affinity: TextAffinity,
+        ) -> HitTestPosition {
+            if idx == 3 && affinity == TextAffinity::Downstream {
+                HitTestPosition::new(Point::new(0.0, 1.8), 1)
+            } else if idx <= 3 {
+                HitTestPosition::new(Point::new(idx as f64, 0.8), 0)
+            } else {
+                HitTestPosition::new(Point::new((idx - 3) as f64, 1.8), 1)
+            }
+        }
+    }
+
     #[test]
     fn layout_origin_defaults_to_requested() {
         let requested = Point::new(3.25, 7.5);
         assert_eq!(NullTextLayout.layout_origin(requested), requested);
+    }
+
+    #[test]
+    fn rects_for_range_uses_affinity_at_soft_wrap_boundaries() {
+        assert_eq!(
+            AffinityTextLayout.rects_for_range(0..5),
+            vec![Rect::new(0.0, 0.0, 2.0, 1.0), Rect::new(0.0, 1.0, 2.0, 2.0),]
+        );
     }
 }

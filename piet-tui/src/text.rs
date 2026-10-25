@@ -11,7 +11,7 @@ use piet::kurbo::{Point, Rect, Size};
 use piet::util::{LayoutDefaults, resolve_range};
 use piet::{
     Color, Error, FontFamily, FontStyle, FontWeight, HitTestPoint, HitTestPosition, LineMetric,
-    TextAlignment, TextAttribute, TextLayout, TextLayoutBuilder, TextStorage,
+    TextAffinity, TextAlignment, TextAttribute, TextLayout, TextLayoutBuilder, TextStorage,
 };
 use ratatui_core::buffer::CellWidth;
 use unicode_segmentation::UnicodeSegmentation;
@@ -332,15 +332,30 @@ impl TextLayout for TuiTextLayout {
     }
 
     fn hit_test_text_position(&self, idx: usize) -> HitTestPosition {
+        self.hit_test_text_position_with_affinity(idx, TextAffinity::Upstream)
+    }
+
+    fn hit_test_text_position_with_affinity(
+        &self,
+        idx: usize,
+        affinity: TextAffinity,
+    ) -> HitTestPosition {
         let data = &self.data;
         let text = data.text.as_str();
         let idx = idx.min(text.len());
         assert!(text.is_char_boundary(idx));
 
-        let line_index = data
-            .lines
-            .iter()
-            .position(|line| idx >= line.start && idx <= line.end)
+        let matching_line = match affinity {
+            TextAffinity::Upstream => data
+                .lines
+                .iter()
+                .position(|line| idx >= line.start && idx <= line.end),
+            TextAffinity::Downstream => data
+                .lines
+                .iter()
+                .rposition(|line| idx >= line.start && idx <= line.end),
+        };
+        let line_index = matching_line
             .or_else(|| data.lines.iter().rposition(|line| line.start <= idx))
             .unwrap_or(0);
         let line = &data.lines[line_index];

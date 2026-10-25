@@ -3,8 +3,8 @@
 
 use piet::kurbo::{Point, Rect, Size};
 use piet::{
-    FontStyle, FontWeight, RenderContext, Text as _, TextAlignment, TextAttribute, TextLayout,
-    TextLayoutBuilder,
+    FontStyle, FontWeight, RenderContext, Text as _, TextAffinity, TextAlignment, TextAttribute,
+    TextLayout, TextLayoutBuilder,
 };
 use piet_tui::{TuiConfig, TuiRenderContext};
 use ratatui_core::buffer::Buffer;
@@ -149,6 +149,30 @@ fn hit_testing_and_text_positions() {
 }
 
 #[test]
+fn text_affinity_disambiguates_soft_wrapped_boundary() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+    let layout = context
+        .text()
+        .new_text_layout("hello world")
+        .max_width(5.0)
+        .build()
+        .unwrap();
+
+    let upstream = layout.hit_test_text_position_with_affinity(6, TextAffinity::Upstream);
+    assert_eq!(upstream.point, Point::new(6.0, 0.8));
+    assert_eq!(upstream.line, 0);
+
+    let downstream = layout.hit_test_text_position_with_affinity(6, TextAffinity::Downstream);
+    assert_eq!(downstream.point, Point::new(0.0, 1.8));
+    assert_eq!(downstream.line, 1);
+
+    let default = layout.hit_test_text_position(6);
+    assert_eq!(default.point, upstream.point);
+    assert_eq!(default.line, upstream.line);
+}
+
+#[test]
 fn point_mode_scales_text_metrics() {
     let mut buffer = empty_buffer(20, 4);
     let mut context =
@@ -203,6 +227,131 @@ fn rects_for_range_spans_lines() {
         layout.rects_for_range(0..5),
         vec![Rect::new(0.0, 0.0, 2.0, 1.0), Rect::new(0.0, 1.0, 2.0, 2.0)]
     );
+}
+
+#[test]
+fn rects_for_range_spans_soft_wrapped_lines() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+    let layout = context
+        .text()
+        .new_text_layout("hello world")
+        .max_width(5.0)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        layout.rects_for_range(2..10),
+        vec![Rect::new(2.0, 0.0, 5.0, 1.0), Rect::new(0.0, 1.0, 4.0, 2.0)]
+    );
+    assert_eq!(
+        layout.rects_for_range(7..10),
+        vec![Rect::new(1.0, 1.0, 4.0, 2.0)]
+    );
+    assert_eq!(
+        layout.rects_for_range(6..10),
+        vec![Rect::new(0.0, 1.0, 4.0, 2.0)]
+    );
+}
+
+#[test]
+fn soft_wrapped_selection_uses_first_line_alignment_offset() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+    let centered = context
+        .text()
+        .new_text_layout("a bc")
+        .max_width(3.0)
+        .alignment(TextAlignment::Center)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        centered.rects_for_range(0..4),
+        vec![Rect::new(1.0, 0.0, 2.0, 1.0), Rect::new(0.5, 1.0, 2.5, 2.0),]
+    );
+
+    let end = context
+        .text()
+        .new_text_layout("a bc")
+        .max_width(3.0)
+        .alignment(TextAlignment::End)
+        .build()
+        .unwrap();
+    assert_eq!(
+        end.rects_for_range(0..4),
+        vec![Rect::new(2.0, 0.0, 3.0, 1.0), Rect::new(1.0, 1.0, 3.0, 2.0)]
+    );
+}
+
+#[test]
+fn text_affinity_preserves_grapheme_and_hard_break_geometry() {
+    let mut buffer = empty_buffer(20, 4);
+    let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+
+    let wide = context
+        .text()
+        .new_text_layout("你好")
+        .max_width(2.0)
+        .build()
+        .unwrap();
+    assert_eq!(
+        wide.hit_test_text_position_with_affinity(3, TextAffinity::Upstream)
+            .point,
+        Point::new(2.0, 0.8)
+    );
+    assert_eq!(
+        wide.hit_test_text_position_with_affinity(3, TextAffinity::Downstream)
+            .point,
+        Point::new(0.0, 1.8)
+    );
+    assert_eq!(
+        wide.rects_for_range(0..6),
+        vec![Rect::new(0.0, 0.0, 2.0, 1.0), Rect::new(0.0, 1.0, 2.0, 2.0)]
+    );
+
+    let combining = context
+        .text()
+        .new_text_layout("e\u{301}e\u{301}")
+        .max_width(1.0)
+        .build()
+        .unwrap();
+    assert_eq!(
+        combining
+            .hit_test_text_position_with_affinity(3, TextAffinity::Downstream)
+            .point,
+        Point::new(0.0, 1.8)
+    );
+    assert_eq!(
+        combining.rects_for_range(0..6),
+        vec![Rect::new(0.0, 0.0, 1.0, 1.0), Rect::new(0.0, 1.0, 1.0, 2.0)]
+    );
+
+    let tabbed = context
+        .text()
+        .new_text_layout("\ta")
+        .max_width(2.0)
+        .build()
+        .unwrap();
+    assert_eq!(
+        tabbed
+            .hit_test_text_position_with_affinity(1, TextAffinity::Upstream)
+            .point,
+        Point::new(4.0, 0.8)
+    );
+    assert_eq!(
+        tabbed
+            .hit_test_text_position_with_affinity(1, TextAffinity::Downstream)
+            .point,
+        Point::new(0.0, 1.8)
+    );
+
+    let hard_break = context.text().new_text_layout("ab\ncd").build().unwrap();
+    for affinity in [TextAffinity::Upstream, TextAffinity::Downstream] {
+        let position = hard_break.hit_test_text_position_with_affinity(2, affinity);
+        assert_eq!(position.point, Point::new(2.0, 0.8));
+        assert_eq!(position.line, 0);
+    }
 }
 
 #[test]
