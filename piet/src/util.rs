@@ -160,6 +160,7 @@ pub struct LayoutDefaults {
     pub font_size: f64,
     pub weight: FontWeight,
     pub fg_color: Color,
+    pub bg_color: Option<Color>,
     pub style: FontStyle,
     pub underline: bool,
     pub strikethrough: bool,
@@ -177,6 +178,7 @@ impl LayoutDefaults {
             TextAttribute::Style(style) => self.style = style,
             TextAttribute::Underline(flag) => self.underline = flag,
             TextAttribute::TextColor(color) => self.fg_color = color,
+            TextAttribute::BackgroundColor(color) => self.bg_color = color,
             TextAttribute::Strikethrough(flag) => self.strikethrough = flag,
         }
     }
@@ -189,6 +191,7 @@ impl Default for LayoutDefaults {
             font_size: DEFAULT_FONT_SIZE,
             weight: FontWeight::default(),
             fg_color: DEFAULT_TEXT_COLOR,
+            bg_color: None,
             style: FontStyle::default(),
             underline: false,
             strikethrough: false,

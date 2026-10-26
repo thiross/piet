@@ -85,7 +85,6 @@ impl piet::Text for TuiText {
             config: Arc::clone(&self.config),
             defaults: LayoutDefaults::default(),
             attributes: Vec::new(),
-            backgrounds: Vec::new(),
             max_width: f64::INFINITY,
             alignment: TextAlignment::default(),
             mode: LayoutMode::Cell,
@@ -99,7 +98,6 @@ pub struct TuiTextLayoutBuilder {
     config: Arc<TuiConfig>,
     defaults: LayoutDefaults,
     attributes: Vec<(Range<usize>, TextAttribute)>,
-    backgrounds: Vec<(Range<usize>, Color)>,
     max_width: f64,
     alignment: TextAlignment,
     mode: LayoutMode,
@@ -112,23 +110,12 @@ impl std::fmt::Debug for TuiTextLayoutBuilder {
             .field("max_width", &self.max_width)
             .field("alignment", &self.alignment)
             .field("attribute_count", &self.attributes.len())
-            .field("background_count", &self.backgrounds.len())
             .field("mode", &self.mode)
             .finish()
     }
 }
 
 impl TuiTextLayoutBuilder {
-    /// Set a background color for a byte range.
-    ///
-    /// Piet's [`TextAttribute`] does not include background color, so this is an
-    /// additive terminal-specific extension. Later ranges override earlier ones.
-    pub fn background_color(mut self, range: impl RangeBounds<usize>, color: Color) -> Self {
-        let range = resolve_range(range, self.text.as_str().len());
-        self.backgrounds.push((range, color));
-        self
-    }
-
     /// Render this layout with a fixed-resolution big-text display font.
     ///
     /// This is a terminal-specific layout mode. `FontFamily` and `FontSize`
@@ -192,7 +179,6 @@ impl TuiTextLayout {
             config: &builder.config,
             defaults: &builder.defaults,
             attributes: &builder.attributes,
-            backgrounds: &builder.backgrounds,
             max_width: builder.max_width,
             alignment: builder.alignment,
             mode: builder.mode,
@@ -456,7 +442,6 @@ struct LayoutBuilder<'a> {
     config: &'a TuiConfig,
     defaults: &'a LayoutDefaults,
     attributes: &'a [(Range<usize>, TextAttribute)],
-    backgrounds: &'a [(Range<usize>, Color)],
     max_width: f64,
     alignment: TextAlignment,
     mode: LayoutMode,
@@ -758,13 +743,11 @@ impl LayoutBuilder<'_> {
                 _ => None,
             })
             .unwrap_or(self.defaults.strikethrough);
-
-        let mut bg = None;
-        for (range, color) in self.backgrounds {
-            if range.contains(&position) {
-                bg = Some(*color);
-            }
-        }
+        let bg = resolve_attribute(self.attributes, position, |attribute| match attribute {
+            TextAttribute::BackgroundColor(color) => Some(*color),
+            _ => None,
+        })
+        .unwrap_or(self.defaults.bg_color);
 
         TextStyle {
             fg,

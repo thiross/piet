@@ -74,7 +74,7 @@ mod native {
                 .range_attribute(12..21, TextAttribute::Underline(true))
                 .range_attribute(26..31, TextAttribute::Strikethrough(true))
                 .range_attribute(26..31, TextAttribute::TextColor(Color::rgb8(240, 120, 160)))
-                .background_color(12..21, Color::rgb8(50, 70, 90))
+                .background_color(12..21, Some(Color::rgb8(50, 70, 90)))
                 .build()
                 .unwrap();
             context.draw_text(&body, Point::new(1.0, 2.0));

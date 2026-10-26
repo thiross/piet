@@ -26,7 +26,7 @@ fn draws_text_with_color_weight_and_background() {
             .new_text_layout("Hello")
             .range_attribute(0..5, TextAttribute::TextColor(Color::rgb8(255, 0, 0)))
             .range_attribute(0..5, FontWeight::BOLD)
-            .background_color(0..5, Color::rgb8(10, 20, 30))
+            .background_color(0..5, Some(Color::rgb8(10, 20, 30)))
             .build()
             .unwrap();
         context.draw_text(&layout, Point::ZERO);
@@ -51,7 +51,7 @@ fn draws_text_with_indexed_colors() {
                 0..4,
                 TextAttribute::TextColor(Color::ansi(AnsiColor::Yellow)),
             )
-            .background_color(0..4, Color::indexed(196))
+            .background_color(0..4, Some(Color::indexed(196)))
             .build()
             .unwrap();
         context.draw_text(&layout, Point::ZERO);
@@ -107,7 +107,7 @@ fn wide_grapheme_background_covers_both_cells() {
         let layout = context
             .text()
             .new_text_layout("你")
-            .background_color(0..3, Color::rgb8(4, 5, 6))
+            .background_color(0..3, Some(Color::rgb8(4, 5, 6)))
             .build()
             .unwrap();
         context.draw_text(&layout, Point::ZERO);
@@ -115,6 +115,67 @@ fn wide_grapheme_background_covers_both_cells() {
 
     assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
     assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+}
+
+#[test]
+fn combining_grapheme_background_covers_its_cell() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("e\u{301}x")
+            .background_color(0..3, Some(Color::rgb8(4, 5, 6)))
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().symbol(), "e\u{301}");
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn background_covers_both_wrapped_rows() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("abcd")
+            .max_width(2.0)
+            .background_color(0..4, Some(Color::rgb8(4, 5, 6)))
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    for col in 0..2 {
+        assert_eq!(buffer.cell((col, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+        assert_eq!(buffer.cell((col, 1)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+    }
+}
+
+#[test]
+fn background_none_clears_an_outer_range() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("abcdef")
+            .background_color(0..6, Some(Color::rgb8(1, 2, 3)))
+            .background_color(2..4, None)
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    assert_eq!(buffer.cell((1, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
+    assert_eq!(buffer.cell((2, 0)).unwrap().bg, TuiColor::Reset);
+    assert_eq!(buffer.cell((3, 0)).unwrap().bg, TuiColor::Reset);
+    assert_eq!(buffer.cell((4, 0)).unwrap().bg, TuiColor::Rgb(1, 2, 3));
 }
 
 #[test]
@@ -368,8 +429,8 @@ fn later_overlapping_background_range_only_overrides_its_span() {
         let layout = context
             .text()
             .new_text_layout("abcdef")
-            .background_color(0..6, Color::rgb8(1, 2, 3))
-            .background_color(2..4, Color::rgb8(4, 5, 6))
+            .background_color(0..6, Some(Color::rgb8(1, 2, 3)))
+            .background_color(2..4, Some(Color::rgb8(4, 5, 6)))
             .build()
             .unwrap();
         context.draw_text(&layout, Point::ZERO);
@@ -395,6 +456,49 @@ fn tab_cells_are_rendered_as_spaces() {
     assert_eq!(buffer.cell((2, 0)).unwrap().symbol(), " ");
     assert_eq!(buffer.cell((3, 0)).unwrap().symbol(), " ");
     assert_eq!(buffer.cell((4, 0)).unwrap().symbol(), "b");
+}
+
+#[test]
+fn background_covers_every_cell_of_a_tab() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("a\tb")
+            .background_color(1..2, Some(Color::rgb8(4, 5, 6)))
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Reset);
+    for col in 1..4 {
+        assert_eq!(buffer.cell((col, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+    }
+    assert_eq!(buffer.cell((4, 0)).unwrap().bg, TuiColor::Reset);
+}
+
+#[test]
+fn background_preserves_trailing_whitespace_and_hard_line_boundaries() {
+    let mut buffer = empty_buffer(20, 4);
+    {
+        let mut context = TuiRenderContext::new(&mut buffer, TuiConfig::default());
+        let layout = context
+            .text()
+            .new_text_layout("ab  \ncd")
+            .background_color(1..6, Some(Color::rgb8(4, 5, 6)))
+            .build()
+            .unwrap();
+        context.draw_text(&layout, Point::ZERO);
+    }
+
+    assert_eq!(buffer.cell((0, 0)).unwrap().bg, TuiColor::Reset);
+    for col in 1..4 {
+        assert_eq!(buffer.cell((col, 0)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+    }
+    assert_eq!(buffer.cell((0, 1)).unwrap().bg, TuiColor::Rgb(4, 5, 6));
+    assert_eq!(buffer.cell((1, 1)).unwrap().bg, TuiColor::Reset);
 }
 
 #[test]

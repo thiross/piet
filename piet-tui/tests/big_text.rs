@@ -108,7 +108,7 @@ fn applies_span_styles_and_background_to_glyph_cells() {
             .new_text_layout("AB")
             .big_text(BigTextSize::Quadrant)
             .range_attribute(0..1, TextAttribute::TextColor(Color::rgb8(255, 0, 0)))
-            .background_color(0..1, Color::rgb8(10, 20, 30))
+            .background_color(0..1, Some(Color::rgb8(10, 20, 30)))
             .build()
             .unwrap();
         context.draw_text(&layout, Point::ZERO);
@@ -167,7 +167,7 @@ fn big_text_respects_translation_and_clip() {
             .text()
             .new_text_layout("A")
             .big_text(BigTextSize::Quadrant)
-            .background_color(.., Color::rgb8(10, 20, 30))
+            .background_color(.., Some(Color::rgb8(10, 20, 30)))
             .build()
             .unwrap();
         context.clip(Rect::new(2.0, 1.0, 4.0, 5.0));

@@ -148,6 +148,7 @@ impl piet::TextLayoutBuilder for TextLayoutBuilder {
             TextAttribute::Style(style) => self.font_face.style = style,
             TextAttribute::Underline(underline) => self.underline = underline,
             TextAttribute::Strikethrough(strikethrough) => self.strikethrough = strikethrough,
+            TextAttribute::BackgroundColor(_) => {}
         }
 
         self

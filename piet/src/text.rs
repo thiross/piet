@@ -143,6 +143,11 @@ pub enum TextAttribute {
     Weight(FontWeight),
     /// The foreground color of the text.
     TextColor(crate::Color),
+    /// The background color behind the text.
+    ///
+    /// `Some(color)` paints the attributed cell backgrounds, while `None`
+    /// clears a background inherited from an outer range.
+    BackgroundColor(Option<crate::Color>),
     /// The [`FontStyle`]; either regular or italic.
     Style(FontStyle),
     /// Underline.
@@ -200,6 +205,19 @@ pub trait TextLayoutBuilder: Sized {
     /// `default_attribute` method.
     fn text_color(self, color: Color) -> Self {
         self.default_attribute(TextAttribute::TextColor(color))
+    }
+
+    /// Set the background color for a range of this layout.
+    ///
+    /// `Some(color)` paints the background behind the range. `None` clears a
+    /// background inherited from an outer range.
+    ///
+    /// This is equivalent to passing
+    /// `TextAttribute::BackgroundColor(color)` to [`range_attribute`].
+    ///
+    /// [`range_attribute`]: TextLayoutBuilder::range_attribute
+    fn background_color(self, range: impl RangeBounds<usize>, color: Option<Color>) -> Self {
+        self.range_attribute(range, TextAttribute::BackgroundColor(color))
     }
 
     /// Add a default [`TextAttribute`] for this layout.

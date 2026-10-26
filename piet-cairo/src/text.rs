@@ -120,6 +120,18 @@ impl AttributeWithRange {
                 .into()
             }
 
+            TextAttribute::BackgroundColor(Some(background_color)) => {
+                let (r, g, b, _) = background_color.as_rgba8();
+                AttrColor::new_background(
+                    (r as u16 * 256) + (r as u16),
+                    (g as u16 * 256) + (g as u16),
+                    (b as u16 * 256) + (b as u16),
+                )
+                .into()
+            }
+
+            TextAttribute::BackgroundColor(None) => AttrInt::new_background_alpha(0).into(),
+
             TextAttribute::Style(style) => {
                 let style = match style {
                     FontStyle::Regular => PangoStyle::Normal,

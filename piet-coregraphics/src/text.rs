@@ -261,7 +261,9 @@ impl CoreGraphicsTextLayoutBuilder {
         // immediately.
         if matches!(
             &attr,
-            TextAttribute::TextColor(_) | TextAttribute::Underline(_)
+            TextAttribute::TextColor(_)
+                | TextAttribute::BackgroundColor(_)
+                | TextAttribute::Underline(_)
         ) {
             return self.add_immediately(attr, range);
         }
@@ -299,6 +301,7 @@ impl CoreGraphicsTextLayoutBuilder {
             TextAttribute::TextColor(color) => {
                 self.attr_string.set_fg_color(range, color);
             }
+            TextAttribute::BackgroundColor(_) => {}
             TextAttribute::Underline(flag) => self.attr_string.set_underline(range, flag),
             _ => unreachable!(),
         }
@@ -379,6 +382,7 @@ impl Attributes {
             TextAttribute::Style(s) => self.style = Some(Span::new(s, range)),
             TextAttribute::Strikethrough(_) => { /* Unimplemented for now as coregraphics doesn't have native strikethrough support. */
             }
+            TextAttribute::BackgroundColor(_) => {}
             _ => unreachable!(),
         }
     }

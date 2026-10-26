@@ -194,7 +194,7 @@ mod native {
                 .default_attribute(FontStyle::Italic),
             BlockKind::Code => builder
                 .default_attribute(TextAttribute::TextColor(CODE_FG))
-                .background_color(0..block.text.text.len(), CODE_BG),
+                .background_color(0..block.text.text.len(), Some(CODE_BG)),
             BlockKind::Rule => builder.default_attribute(TextAttribute::TextColor(MUTED)),
             BlockKind::Paragraph | BlockKind::Bullet | BlockKind::Ordered => {
                 builder.default_attribute(TextAttribute::TextColor(FOREGROUND))
@@ -219,7 +219,7 @@ mod native {
             if span.style.code {
                 builder = builder
                     .range_attribute(range.clone(), TextAttribute::TextColor(CODE_FG))
-                    .background_color(range.clone(), CODE_BG);
+                    .background_color(range.clone(), Some(CODE_BG));
             }
             if let Some(color) = span.style.fg {
                 builder = builder.range_attribute(range, TextAttribute::TextColor(color));

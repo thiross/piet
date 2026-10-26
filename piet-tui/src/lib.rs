@@ -9,9 +9,9 @@
 //! system graphics stack.
 //!
 //! Text is laid out on a character-cell grid. Rich text attributes that map to
-//! terminal capabilities are supported: foreground color, bold, italic,
-//! underline, strikethrough, wrapping, and alignment. Font family and font size
-//! are accepted for API compatibility but are not rendered differently.
+//! terminal capabilities are supported: foreground and background colors, bold,
+//! italic, underline, strikethrough, wrapping, and alignment. Font family and
+//! font size are accepted for API compatibility but are not rendered differently.
 //!
 //! Terminal theme colors can be requested with [`piet::Color::ansi`] or
 //! [`piet::Color::indexed`]. Opaque indexed colors remain
